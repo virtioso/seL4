@@ -284,6 +284,14 @@ config_option(
 )
 
 config_option(
+    KernelMemDebugPrinting KERNEL_MEM_DEBUG_PRINTING
+    "Print more verbose output about free memory init and creation of untyped regions during bootup."
+    DEFAULT OFF
+    DEPENDS "KernelPrinting"
+    DEFAULT_DISABLED OFF
+)
+
+config_option(
     KernelInvocationReportErrorIPC KERNEL_INVOCATION_REPORT_ERROR_IPC
     "Allows the kernel to write the userError to the IPC buffer"
     DEFAULT OFF

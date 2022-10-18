@@ -767,6 +767,13 @@ BOOT_CODE static bool_t create_untypeds_for_region(
             if (!provide_untyped_cap(root_cnode_cap, device_memory, reg.start, size_bits, first_untyped_slot)) {
                 return false;
             }
+#ifdef CONFIG_KERNEL_MEM_DEBUG_PRINTING
+            printf("  [%"SEL4_PRIx_word"..%"SEL4_PRIx_word"] (%s), size 0x%lx\n",
+                reg.start,
+                reg.start + BIT(size_bits),
+                device_memory ? "device" : "memory",
+                BIT(size_bits));
+#endif
         }
         reg.start += BIT(size_bits);
     }
@@ -777,6 +784,9 @@ BOOT_CODE bool_t create_untypeds(cap_t root_cnode_cap)
 {
     seL4_SlotPos first_untyped_slot = ndks_boot.slot_pos_cur;
 
+#ifdef CONFIG_KERNEL_MEM_DEBUG_PRINTING
+    printf("Creating untyped regions: \n");
+#endif
     paddr_t start = 0;
     for (word_t i = 0; i < ndks_boot.resv_count; i++) {
         if (start < ndks_boot.reserved[i].start) {
@@ -1062,6 +1072,20 @@ BOOT_CODE bool_t init_freemem(word_t n_available, const p_region_t *available,
             };
             /* Leave the before leftover in current slot i. */
             ndks_boot.freemem[i].end = start;
+#ifdef CONFIG_KERNEL_MEM_DEBUG_PRINTING
+            word_t num_remaining_freemem = 0;
+            for (word_t i = 0; i < ARRAY_SIZE(ndks_boot.freemem) - 1; i++) {
+                if (!is_reg_empty(ndks_boot.freemem[i])) num_remaining_freemem++;
+            }
+
+            printf("remaining freemem regions: %"SEL4_PRIu_word"\n", num_remaining_freemem);
+
+            for (word_t i = 0; i < ARRAY_SIZE(ndks_boot.freemem) - 1; i++) {
+                if (!is_reg_empty(ndks_boot.freemem[i])) {
+                    printf("  [%"SEL4_PRIx_word"..%"SEL4_PRIx_word"]\n", ndks_boot.freemem[i].start, ndks_boot.freemem[i].end);
+                }
+            }
+#endif
             /* Regions i and (i + 1) are now well defined, ordered, disjoint,
              * and unallocated, so we can return successfully. */
             return true;
