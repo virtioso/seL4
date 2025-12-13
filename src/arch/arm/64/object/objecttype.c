@@ -452,9 +452,9 @@ cap_t Arch_createObject(object_t t, void *regionBase, word_t userSize, bool_t de
         for (word_t i = 0; i < BIT(seL4_VSpaceIndexBits); i++) {
             ((pte_t *)regionBase)[i] = pte_pte_invalid_new();
         }
-        cleanCacheRange_PoU((word_t)regionBase,
-                            (word_t)regionBase + MASK(seL4_VSpaceBits),
-                            addrFromPPtr(regionBase));
+        cleanInvalidateCacheRange_RAM((word_t)regionBase,
+                                      (word_t)regionBase + MASK(seL4_VSpaceBits),
+                                      addrFromPPtr(regionBase));
 #ifdef CONFIG_ARM_SMMU
         return cap_vspace_cap_new(
                    asidInvalid,           /* capVSMappedASID */
@@ -476,9 +476,9 @@ cap_t Arch_createObject(object_t t, void *regionBase, word_t userSize, bool_t de
         for (word_t i = 0; i < BIT(seL4_PageTableIndexBits); i++) {
             ((pte_t *)regionBase)[i] = pte_pte_invalid_new();
         }
-        cleanCacheRange_PoU((word_t)regionBase,
-                            (word_t)regionBase + MASK(seL4_PageTableBits),
-                            addrFromPPtr(regionBase));
+        cleanInvalidateCacheRange_RAM((word_t)regionBase,
+                                      (word_t)regionBase + MASK(seL4_PageTableBits),
+                                      addrFromPPtr(regionBase));
         return cap_page_table_cap_new(
                    asidInvalid,           /* capPTMappedASID    */
                    (word_t)regionBase,    /* capPTBasePtr       */
