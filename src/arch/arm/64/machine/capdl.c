@@ -193,7 +193,7 @@ static void arm64_cap_pd_print_slots(pte_t *pudSlot, vptr_t vptr)
 
 static void arm64_cap_pud_print_slots(void *pgdSlot_or_vspace, vptr_t vptr)
 {
-#ifdef AARCH64_VSPACE_S2_START_L1
+#ifdef CONFIG_AARCH64_VSPACE_S2_START_L1
     pte_t *pud = pgdSlot_or_vspace;
     word_t index_bits = seL4_VSpaceIndexBits;
     printf("%p_pd {\n", pgdSlot_or_vspace);
@@ -230,7 +230,7 @@ void obj_vtable_print_slots(tcb_t *tcb)
         * ARM hyp uses 3 level translation rather than the usual 4 level.
         * levels: PGD -> UPD -> PD -> PT
         */
-#ifdef AARCH64_VSPACE_S2_START_L1
+#ifdef CONFIG_AARCH64_VSPACE_S2_START_L1
         arm64_cap_pud_print_slots(vspace, 0);
 #else
         printf("%p_pd {\n", vspace);
@@ -434,7 +434,7 @@ void arm64_obj_pd_print_slots(pte_t *pudSlot)
 void arm64_obj_pud_print_slots(void *pgdSlot_or_vspace)
 {
     pte_t *pud = paddr_to_pptr(pte_pte_table_ptr_get_pt_base_address(pgdSlot_or_vspace));
-#ifdef AARCH64_VSPACE_S2_START_L1
+#ifdef CONFIG_AARCH64_VSPACE_S2_START_L1
     word_t index_bits = seL4_VSpaceIndexBits;
 #else
     word_t index_bits = seL4_PageTableIndexBits;
@@ -467,7 +467,7 @@ void obj_tcb_print_vtable(tcb_t *tcb)
          * ARM hyp uses 3 level translation rather than the usual 4 level.
          * levels: PGD -> PUD -> PD -> PT
          */
-#ifdef AARCH64_VSPACE_S2_START_L1
+#ifdef CONFIG_AARCH64_VSPACE_S2_START_L1
         printf("%p_pd = pud\n", vspace);
         arm64_obj_pud_print_slots(vspace);
 #else

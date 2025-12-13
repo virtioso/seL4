@@ -91,7 +91,7 @@ config_option(
 
 config_option(KernelArmGicV3 ARM_GIC_V3_SUPPORT "Build support for GICv3" DEFAULT OFF)
 
-if(KernelArmPASizeBits40 AND ARM_HYPERVISOR_SUPPORT)
+if(KernelArmPASizeBits40 AND KernelArmHypervisorSupport)
     config_set(KernelAarch64VspaceS2StartL1 AARCH64_VSPACE_S2_START_L1 "ON")
 else()
     config_set(KernelAarch64VspaceS2StartL1 AARCH64_VSPACE_S2_START_L1 "OFF")

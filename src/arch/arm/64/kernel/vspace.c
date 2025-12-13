@@ -318,7 +318,7 @@ static BOOT_CODE void map_it_frame_cap(cap_t vspace_cap, cap_t frame_cap, bool_t
 
     assert(cap_frame_cap_get_capFMappedASID(frame_cap) != 0);
 
-#ifdef AARCH64_VSPACE_S2_START_L1
+#ifdef CONFIG_AARCH64_VSPACE_S2_START_L1
     pud = vspaceRoot;
 #else
     vspaceRoot += GET_UPT_INDEX(vptr, ULVL_FRM_ARM_PT_LVL(0));
@@ -379,7 +379,7 @@ static BOOT_CODE void map_it_pt_cap(cap_t vspace_cap, cap_t pt_cap)
 
     assert(cap_page_table_cap_get_capPTIsMapped(pt_cap));
 
-#ifdef AARCH64_VSPACE_S2_START_L1
+#ifdef CONFIG_AARCH64_VSPACE_S2_START_L1
     pud = vspaceRoot;
 #else
     vspaceRoot += GET_UPT_INDEX(vptr, ULVL_FRM_ARM_PT_LVL(0));
@@ -416,7 +416,7 @@ static BOOT_CODE void map_it_pd_cap(cap_t vspace_cap, cap_t pd_cap)
 
     assert(cap_page_table_cap_get_capPTIsMapped(pd_cap));
 
-#ifdef AARCH64_VSPACE_S2_START_L1
+#ifdef CONFIG_AARCH64_VSPACE_S2_START_L1
     pud = vspaceRoot;
 #else
     vspaceRoot += GET_UPT_INDEX(vptr, ULVL_FRM_ARM_PT_LVL(0));
@@ -441,7 +441,7 @@ static BOOT_CODE cap_t create_it_pd_cap(cap_t vspace_cap, pptr_t pptr, vptr_t vp
     return cap;
 }
 
-#ifndef AARCH64_VSPACE_S2_START_L1
+#ifndef CONFIG_AARCH64_VSPACE_S2_START_L1
 static BOOT_CODE void map_it_pud_cap(cap_t vspace_cap, cap_t pud_cap)
 {
     pte_t *pgd = PT_PTR(pptr_of_cap(vspace_cap));
@@ -470,7 +470,7 @@ static BOOT_CODE cap_t create_it_pud_cap(cap_t vspace_cap, pptr_t pptr, vptr_t v
 BOOT_CODE word_t arch_get_n_paging(v_region_t it_v_reg)
 {
     return
-#ifndef AARCH64_VSPACE_S2_START_L1
+#ifndef CONFIG_AARCH64_VSPACE_S2_START_L1
         get_n_paging(it_v_reg, GET_ULVL_PGSIZE_BITS(ULVL_FRM_ARM_PT_LVL(0))) +
 #endif
         get_n_paging(it_v_reg, GET_ULVL_PGSIZE_BITS(ULVL_FRM_ARM_PT_LVL(1))) +
@@ -496,7 +496,7 @@ BOOT_CODE cap_t create_it_address_space(cap_t root_cnode_cap, v_region_t it_v_re
     slot_pos_before = ndks_boot.slot_pos_cur;
     write_slot(SLOT_PTR(pptr_of_cap(root_cnode_cap), seL4_CapInitThreadVSpace), vspace_cap);
 
-#ifndef AARCH64_VSPACE_S2_START_L1
+#ifndef CONFIG_AARCH64_VSPACE_S2_START_L1
     /* Create any PUDs needed for the user land image */
     for (vptr = ROUND_DOWN(it_v_reg.start, GET_ULVL_PGSIZE_BITS(ULVL_FRM_ARM_PT_LVL(0)));
          vptr < it_v_reg.end;

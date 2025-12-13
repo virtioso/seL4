@@ -23,7 +23,7 @@
  * PT_LEVEL_SHIFT(n) == PT_INDEX_BITS * (NUM_PT_LEVELS - n) + seL4_PageBits
  * GET_PT_INDEX(addr, n) == (addr >> PT_LEVEL_SHIFT(n)) & MASK(PT_INDEX_BITS)
  */
-#ifdef AARCH64_VSPACE_S2_START_L1
+#ifdef CONFIG_AARCH64_VSPACE_S2_START_L1
 #define UPT_LEVELS 3
 #define ULVL_FRM_ARM_PT_LVL(n) ((n)-1)
 #else

@@ -37,7 +37,7 @@ typedef word_t vm_rights_t;
 
 #define VCPU_SIZE_BITS      seL4_VCPUBits
 
-#ifdef AARCH64_VSPACE_S2_START_L1
+#ifdef CONFIG_AARCH64_VSPACE_S2_START_L1
 /* For hyp with 40 bit PA, EL1 and EL0 use a 3 level translation and skips the PGD */
 typedef pte_t vspace_root_t;
 #else

@@ -146,7 +146,7 @@ static void arm_load_thread_id(tcb_t *thread)
 #define TCR_EL2_TCR_PS_4P   6
 #define TCR_EL2_TCR_PS_SHIFT 16
 
-#ifdef AARCH64_VSPACE_S2_START_L1
+#ifdef CONFIG_AARCH64_VSPACE_S2_START_L1
 #define TCR_EL2_TCR_PS TCR_EL2_TCR_PS_1T
 #else
 #define TCR_EL2_TCR_PS TCR_EL2_TCR_PS_16T
