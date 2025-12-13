@@ -8,6 +8,7 @@
 
 #include <config.h>
 #include <mode/machine.h>
+#include <mode/model/statedata.h>
 
 static inline void invalidateLocalTLB_VMID(word_t vmid)
 {
@@ -16,11 +17,12 @@ static inline void invalidateLocalTLB_VMID(word_t vmid)
     dsb();
     /* We need to switch to the target VMID for flushing
      * the TLB if necessary.
-     * Note that an invalid address is used, and it seems
-     * fine. Otherwise, an ASID lookup is required.
+     * Note: We use armKSGlobalUserVSpace as a valid empty page table base.
+     * Using base=0 causes RAS errors on some platforms (e.g., Tegra234/Orin)
+     * where the hardware does speculative table walks during TLBI.
      */
     if (v != vmid) {
-        setCurrentUserVSpaceRoot(ttbr_new(vmid, 0));
+        setCurrentUserVSpaceRoot(ttbr_new(vmid, addrFromPPtr(armKSGlobalUserVSpace)));
     }
     invalidateLocalTLB_VMALLS12E1();
     if (v != vmid) {
@@ -40,7 +42,7 @@ static inline void invalidateLocalTLB_IPA_VMID(word_t ipa_plus_vmid)
     word_t ipa = ipa_plus_vmid & 0xfffffffff;
     dsb();
     if (v != vmid) {
-        setCurrentUserVSpaceRoot(ttbr_new(vmid, 0));
+        setCurrentUserVSpaceRoot(ttbr_new(vmid, addrFromPPtr(armKSGlobalUserVSpace)));
     }
     invalidateLocalTLB_IPA(ipa);
     if (v != vmid) {
