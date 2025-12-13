@@ -49,12 +49,27 @@ static inline void clearMemory(word_t *ptr, word_t bits)
     memzero(ptr, BIT(bits));
 }
 
-/* Cleaning memory before page table walker access */
+/* Cleaning memory before page table walker access.
+ *
+ * We use dc civac (clean+invalidate to PoC) for page table maintenance.
+ *
+ * While the MMU hardware walker architecturally operates at PoU (Point of
+ * Unification within the Inner Shareable domain), we use PoC because:
+ *
+ * 1. System-level caches (L3, SLC) on complex SoCs may be beyond PoU and
+ *    only respect PoC operations.
+ *
+ * 2. PoC is more conservative and ensures correctness across diverse ARM
+ *    implementations with varying cache coherency behavior.
+ *
+ * 3. SMP cross-core visibility of shared data structures like page tables
+ *    is guaranteed at PoC.
+ */
 static inline void clearMemory_PT(word_t *ptr, word_t bits)
 {
     memzero(ptr, BIT(bits));
-    cleanCacheRange_PoU((word_t)ptr, (word_t)ptr + BIT(bits) - 1,
-                        addrFromPPtr(ptr));
+    cleanInvalidateCacheRange_RAM((word_t)ptr, (word_t)ptr + BIT(bits) - 1,
+                                  addrFromPPtr(ptr));
 }
 
 #ifdef ENABLE_SMP_SUPPORT
