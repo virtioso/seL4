@@ -181,13 +181,16 @@ devices:
   - compatible:
       - amlogic,meson-gx-uart
       - arm,pl011
+      - arm,sbsa-uart
       - brcm,bcm2835-aux-uart
       - fsl,imx6q-uart
       - fsl,imx8qxp-lpuart
       - fsl,imx7ulp-lpuart
       - fsl,imx6sx-uart
       - nvidia,tegra124-hsuart
+      - nvidia,tegra194-tcu
       - nvidia,tegra20-uart
+      - nvidia,tegra234-tcu
       - qcom,msm-uartdm
       - samsung,exynos4210-uart
       - snps,dw-apb-uart

@@ -12,7 +12,7 @@ register_driver(
     PREFIX src/drivers/serial
     CFILES "bcm2835-aux-uart.c"
 )
-register_driver(compatibility_strings "arm,pl011" PREFIX src/drivers/serial CFILES "pl011.c")
+register_driver(compatibility_strings "arm,pl011;arm,sbsa-uart" PREFIX src/drivers/serial CFILES "pl011.c")
 register_driver(
     compatibility_strings "nvidia,tegra20-uart;ti,omap3-uart;snps,dw-apb-uart"
     PREFIX src/drivers/serial
@@ -43,4 +43,9 @@ register_driver(
     compatibility_strings "amlogic,meson-gx-uart"
     PREFIX src/drivers/serial
     CFILES "meson-gx-uart.c"
+)
+register_driver(
+    compatibility_strings "nvidia,tegra194-tcu;nvidia,tegra234-tcu"
+    PREFIX src/drivers/serial
+    CFILES "tegra-tcu.c"
 )
