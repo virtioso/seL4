@@ -16,7 +16,25 @@
 
 exception_t handle_SysBenchmarkFlushCaches(void)
 {
-#ifdef CONFIG_ARCH_ARM
+#ifdef CONFIG_ARCH_AARCH64
+    /*
+     * Whole-cache flush is not portable on ARM64.
+     *
+     * Linux ARM64 removed flush_cache_all() because the documented semantics
+     * are "not possible to provide for arm64" (Mark Rutland, ARM Ltd).
+     *
+     * Set/way cache operations (dc cisw) have fundamental issues:
+     * - Race with CPU speculation which may hide lines from set/way ops
+     * - Not broadcast to other CPUs
+     * - Don't affect system caches (which only respect VA-based maintenance)
+     * - Only work correctly with caches disabled
+     *
+     * See: projects/tii-sel4-vm/docs/reference/tegra-whole-cache-operations.md
+     */
+    userError("SysBenchmarkFlushCaches: not supported on ARM64 (set/way ops broken)");
+    current_syscall_error.type = seL4_IllegalOperation;
+    return EXCEPTION_SYSCALL_ERROR;
+#elif defined(CONFIG_ARCH_ARM)
     tcb_t *thread = NODE_STATE(ksCurThread);
     if (getRegister(thread, capRegister)) {
         arch_clean_invalidate_L1_caches(getRegister(thread, msgInfoRegister));
