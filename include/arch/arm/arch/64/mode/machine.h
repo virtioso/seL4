@@ -189,6 +189,13 @@ static inline void setCurrentUserVSpaceRoot(ttbr_t ttbr)
     } else {
         MSR("ttbr0_el1", ttbr.words[0]);
     }
+    /*
+     * DSB ensures the VTTBR/TTBR write completes before any subsequent
+     * TLB invalidation. Without this, TLBI may execute while the register
+     * write is still in-flight, causing speculative table walks with
+     * stale translation state (observed as RAS errors on Tegra234/Orin).
+     */
+    dsb();
     isb();
 }
 
@@ -265,6 +272,11 @@ static inline void invalidateLocalTLB_VAASID(word_t mva_plus_asid)
  * EL1 with the current VMID which is specified by vttbr_el2 */
 static inline void invalidateLocalTLB_VMALLS12E1(void)
 {
+    /*
+     * DSB before TLBI ensures all preceding memory accesses and
+     * page table modifications are complete before invalidation.
+     */
+    dsb();
     asm volatile("tlbi vmalls12e1");
     dsb();
     isb();
