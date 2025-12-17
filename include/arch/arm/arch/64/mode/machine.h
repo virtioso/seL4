@@ -181,22 +181,35 @@ static inline void setCurrentKernelVSpaceRoot(ttbr_t ttbr)
     isb();
 }
 
+/* HCR_EL2.VM bit - Virtualization MMU enable (Stage 2 translation) */
+#define HCR_VM_BIT  (1UL << 0)
+
 static inline void setCurrentUserVSpaceRoot(ttbr_t ttbr)
 {
-    dsb();
     if (config_set(CONFIG_ARM_HYPERVISOR_SUPPORT)) {
+        word_t hcr;
+        MRS("hcr_el2", hcr);
+
+        /* Disable Stage 2 translation - prevents speculative PTW */
+        MSR("hcr_el2", hcr & ~HCR_VM_BIT);
+        dsb();
+        isb();
+
+        /* Write new VTTBR - no speculative walks possible now */
         MSR("vttbr_el2", ttbr.words[0]);
+        dsb();
+        isb();
+
+        /* Re-enable Stage 2 translation */
+        MSR("hcr_el2", hcr);
+        dsb();
+        isb();
     } else {
+        dsb();
         MSR("ttbr0_el1", ttbr.words[0]);
+        dsb();
+        isb();
     }
-    /*
-     * DSB ensures the VTTBR/TTBR write completes before any subsequent
-     * TLB invalidation. Without this, TLBI may execute while the register
-     * write is still in-flight, causing speculative table walks with
-     * stale translation state (observed as RAS errors on Tegra234/Orin).
-     */
-    dsb();
-    isb();
 }
 
 static inline word_t getVTTBR(void)
@@ -272,12 +285,8 @@ static inline void invalidateLocalTLB_VAASID(word_t mva_plus_asid)
  * EL1 with the current VMID which is specified by vttbr_el2 */
 static inline void invalidateLocalTLB_VMALLS12E1(void)
 {
-    /*
-     * DSB before TLBI ensures all preceding memory accesses and
-     * page table modifications are complete before invalidation.
-     */
     dsb();
-    asm volatile("tlbi vmalls12e1");
+    asm volatile("tlbi vmalls12e1is");
     dsb();
     isb();
 }
@@ -285,9 +294,9 @@ static inline void invalidateLocalTLB_VMALLS12E1(void)
 /* Invalidate IPA with the current VMID */
 static inline void invalidateLocalTLB_IPA(word_t ipa)
 {
-    asm volatile("tlbi ipas2e1, %0" :: "r"(ipa));
+    asm volatile("tlbi ipas2e1is, %0" :: "r"(ipa));
     dsb();
-    asm volatile("tlbi vmalle1");
+    asm volatile("tlbi vmalle1is");
     dsb();
     isb();
 }
