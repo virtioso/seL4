@@ -1069,7 +1069,7 @@ void unmapPage(vm_page_size_t page_size, asid_t asid, vptr_t vptr, pptr_t pptr)
     /* Use dc civac (PoC) for page table writes - MMU walker reads from PoC */
     cleanInvalByVA((vptr_t)lu_ret.ptSlot, pptr_to_paddr(lu_ret.ptSlot));
     assert(asid < BIT(16));
-    invalidateTLBByASIDVA(asid, vptr);
+    invalidateTLBByASID(asid);
 }
 
 void deleteASID(asid_t asid, vspace_root_t *vspace)
