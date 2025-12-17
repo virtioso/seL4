@@ -148,9 +148,9 @@
 		status = "okay";
 	};
 
-	memory@80000000 {
+	memory@80032000 {
 		device_type = "memory";
-		/* 32GB RAM - adjust based on actual Orin AGX variant */
-		reg = <0x0 0x80000000 0x2 0x00000000>;
+		/* 768MB RAM starting at 0x80032000 - avoids first 200KB of DRAM where RAS errors occur */
+		reg = <0x0 0x80032000 0x0 0x30000000>;
 	};
 };
