@@ -295,6 +295,10 @@ BOOT_CODE void map_kernel_window(void)
                                                                            );
 
     map_kernel_devices();
+
+    for (word_t i = 0; i < BIT(seL4_VSpaceIndexBits); i++) {
+        armKSGlobalUserVSpace[i] = pte_pte_invalid_new();
+    }
 }
 
 /* When the hypervisor support is enabled, the stage-2 translation table format
