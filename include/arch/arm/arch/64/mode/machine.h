@@ -18,6 +18,11 @@
 #include <machine/io.h>
 #include <mode/machine_pl2.h>
 #include <mode/hardware.h>
+#include <hardware.h>
+
+extern vspace_root_t armKSGlobalUserVSpace[];
+#define pte_pte_invalid_new() \
+    ((pte_t){ .words[0] = addrFromPPtr(armKSGlobalUserVSpace) & 0xfffffffff000ull })
 
 #define CNTPCT   "cntpct_el0"
 #define CNTV_CTL "cntv_ctl_el0"
