@@ -1193,7 +1193,20 @@ static exception_t performPageTableInvocationUnmap(cap_t cap, cte_t *ctSlot)
         pte_t *pt = PT_PTR(cap_page_table_cap_get_capPTBasePtr(cap));
         unmapPageTable(cap_page_table_cap_get_capPTMappedASID(cap),
                        cap_page_table_cap_get_capPTMappedAddress(cap), pt);
-        clearMemory_PT((void *)pt, cap_get_capSizeBits(cap));
+
+        /*
+         * Clear page table by setting all entries to pte_pte_invalid_new().
+         * This uses a valid physical address (armKSGlobalUserVSpace) instead
+         * of zero, preventing speculative page table walks from accessing
+         * addresses below DRAM base which trigger SCC Address Range Errors
+         * on Tegra platforms.
+         */
+        for (word_t i = 0; i < BIT(seL4_PageTableIndexBits); i++) {
+            pt[i] = pte_pte_invalid_new();
+        }
+        cleanInvalidateCacheRange_RAM((word_t)pt,
+                                      (word_t)pt + MASK(seL4_PageTableBits),
+                                      addrFromPPtr(pt));
     }
 
     cap_page_table_cap_ptr_set_capPTIsMapped(&(ctSlot->cap), 0);
