@@ -394,9 +394,29 @@ static BOOT_CODE void map_it_pt_cap(cap_t vspace_cap, cap_t pt_cap)
                                                           );
 }
 
+/* Initialize a page table with safe invalid PTEs.
+ * This is critical for ARM64 to prevent speculative PTW from accessing
+ * invalid memory addresses. Zero PTEs have bits[47:12]=0 which points to
+ * physical address 0 (below DRAM), causing RAS errors on Orin AGX.
+ * Safe PTEs have bits[47:12] pointing to armKSGlobalUserVSpace (valid DRAM address).
+ */
+static BOOT_CODE void init_pt_with_safe_ptes(pptr_t pptr)
+{
+    pte_t *pt = (pte_t *)pptr;
+    pte_t safe_pte = pte_pte_invalid_new();
+    for (word_t i = 0; i < BIT(seL4_PageTableIndexBits); i++) {
+        pt[i] = safe_pte;
+    }
+    /* Clean cache to ensure safe PTEs are visible to the MMU's page table walker */
+    cleanCacheRange_RAM((word_t)pt, ((word_t)pt) + BIT(seL4_PageTableBits) - 1,
+                        addrFromPPtr(pt));
+}
+
 static BOOT_CODE cap_t create_it_pt_cap(cap_t vspace_cap, pptr_t pptr, vptr_t vptr, asid_t asid)
 {
     cap_t cap;
+    /* Initialize with safe PTEs before mapping */
+    init_pt_with_safe_ptes(pptr);
     cap = cap_page_table_cap_new(
               asid,                   /* capPTMappedASID */
               pptr,                   /* capPTBasePtr */
@@ -431,6 +451,8 @@ static BOOT_CODE void map_it_pd_cap(cap_t vspace_cap, cap_t pd_cap)
 static BOOT_CODE cap_t create_it_pd_cap(cap_t vspace_cap, pptr_t pptr, vptr_t vptr, asid_t asid)
 {
     cap_t cap;
+    /* Initialize with safe PTEs before mapping */
+    init_pt_with_safe_ptes(pptr);
     cap = cap_page_table_cap_new(
               asid,                   /* capPTMappedASID */
               pptr,                   /* capPTBasePtr */
@@ -457,6 +479,8 @@ static BOOT_CODE void map_it_pud_cap(cap_t vspace_cap, cap_t pud_cap)
 static BOOT_CODE cap_t create_it_pud_cap(cap_t vspace_cap, pptr_t pptr, vptr_t vptr, asid_t asid)
 {
     cap_t cap;
+    /* Initialize with safe PTEs before mapping */
+    init_pt_with_safe_ptes(pptr);
     cap = cap_page_table_cap_new(
               asid,               /* capPTMappedASID */
               pptr,               /* capPTBasePtr */
@@ -483,6 +507,11 @@ BOOT_CODE cap_t create_it_address_space(cap_t root_cnode_cap, v_region_t it_v_re
     vptr_t     vptr;
     seL4_SlotPos slot_pos_before;
     seL4_SlotPos slot_pos_after;
+
+    /* Initialize the rootserver VSpace with safe PTEs before creating the cap.
+     * This prevents speculative PTW from accessing invalid memory addresses.
+     */
+    init_pt_with_safe_ptes(rootserver.vspace);
 
     /* create the PGD */
     vspace_cap = cap_vspace_cap_new(
@@ -1201,12 +1230,18 @@ static exception_t performPageTableInvocationUnmap(cap_t cap, cte_t *ctSlot)
          * addresses below DRAM base which trigger SCC Address Range Errors
          * on Tegra platforms.
          */
+        pte_t safe_pte = pte_pte_invalid_new();
+
+        /* Write safe PTEs to all entries */
         for (word_t i = 0; i < BIT(seL4_PageTableIndexBits); i++) {
-            pt[i] = pte_pte_invalid_new();
+            pt[i] = safe_pte;
         }
-        cleanInvalidateCacheRange_RAM((word_t)pt,
-                                      (word_t)pt + MASK(seL4_PageTableBits),
-                                      addrFromPPtr(pt));
+
+        /* Flush each entry to PoC using dc civac */
+        for (word_t i = 0; i < BIT(seL4_PageTableIndexBits); i++) {
+            asm volatile("dc civac, %0" : : "r"((word_t)&pt[i]));
+        }
+        asm volatile("dsb sy" ::: "memory");
     }
 
     cap_page_table_cap_ptr_set_capPTIsMapped(&(ctSlot->cap), 0);

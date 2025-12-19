@@ -156,16 +156,41 @@ finaliseCap_ret_t Arch_finaliseCap(cap_t cap, bool_t final)
         }
 #endif
         if (final && cap_vspace_cap_get_capVSIsMapped(cap)) {
-            deleteASID(cap_vspace_cap_get_capVSMappedASID(cap),
-                       VSPACE_PTR(cap_vspace_cap_get_capVSBasePtr(cap)));
+            vspace_root_t *vspace = VSPACE_PTR(cap_vspace_cap_get_capVSBasePtr(cap));
+            deleteASID(cap_vspace_cap_get_capVSMappedASID(cap), vspace);
+
+            /*
+             * Clear VSpace entries to pte_pte_invalid_new() to prevent
+             * speculative page table walks from accessing addresses below
+             * DRAM base (triggers SCC Address Range Errors on Tegra).
+             */
+            for (word_t i = 0; i < BIT(seL4_VSpaceIndexBits); i++) {
+                vspace[i] = pte_pte_invalid_new();
+            }
+            cleanInvalidateCacheRange_RAM((word_t)vspace,
+                                          (word_t)vspace + MASK(seL4_VSpaceBits),
+                                          addrFromPPtr(vspace));
         }
         break;
 
     case cap_page_table_cap:
         if (final && cap_page_table_cap_get_capPTIsMapped(cap)) {
+            pte_t *pt = PTE_PTR(cap_page_table_cap_get_capPTBasePtr(cap));
             unmapPageTable(cap_page_table_cap_get_capPTMappedASID(cap),
                            cap_page_table_cap_get_capPTMappedAddress(cap),
-                           PTE_PTR(cap_page_table_cap_get_capPTBasePtr(cap)));
+                           pt);
+
+            /*
+             * Clear page table entries to pte_pte_invalid_new() to prevent
+             * speculative page table walks from accessing addresses below
+             * DRAM base (triggers SCC Address Range Errors on Tegra).
+             */
+            for (word_t i = 0; i < BIT(seL4_PageTableIndexBits); i++) {
+                pt[i] = pte_pte_invalid_new();
+            }
+            cleanInvalidateCacheRange_RAM((word_t)pt,
+                                          (word_t)pt + MASK(seL4_PageTableBits),
+                                          addrFromPPtr(pt));
         }
         break;
 
@@ -449,8 +474,23 @@ cap_t Arch_createObject(object_t t, void *regionBase, word_t userSize, bool_t de
         /** AUXUPD: "(True, ptr_retyps 1
               (Ptr (ptr_val \<acute>regionBase) :: (pte_C[vs_array_len]) ptr))" */
         /** GHOSTUPD: "(True, gs_new_pt_t VSRootPT_T (ptr_val \<acute>regionBase))" */
-        for (word_t i = 0; i < BIT(seL4_VSpaceIndexBits); i++) {
-            ((pte_t *)regionBase)[i] = pte_pte_invalid_new();
+        {
+            /*
+             * Initialize VSpace with safe PTEs using regular stores + cache flush.
+             */
+            pte_t safe_pte = pte_pte_invalid_new();
+            pte_t *pt = (pte_t *)regionBase;
+
+            /* Write safe PTEs to all entries */
+            for (word_t i = 0; i < BIT(seL4_VSpaceIndexBits); i++) {
+                pt[i] = safe_pte;
+            }
+
+            /* Flush each entry to PoC using dc civac */
+            for (word_t i = 0; i < BIT(seL4_VSpaceIndexBits); i++) {
+                asm volatile("dc civac, %0" : : "r"((word_t)&pt[i]));
+            }
+            asm volatile("dsb sy" ::: "memory");
         }
         cleanInvalidateCacheRange_RAM((word_t)regionBase,
                                       (word_t)regionBase + MASK(seL4_VSpaceBits),
@@ -473,8 +513,28 @@ cap_t Arch_createObject(object_t t, void *regionBase, word_t userSize, bool_t de
         /** AUXUPD: "(True, ptr_retyps 1
               (Ptr (ptr_val \<acute>regionBase) :: (pte_C[pt_array_len]) ptr))" */
         /** GHOSTUPD: "(True, gs_new_pt_t NormalPT_T (ptr_val \<acute>regionBase))" */
-        for (word_t i = 0; i < BIT(seL4_PageTableIndexBits); i++) {
-            ((pte_t *)regionBase)[i] = pte_pte_invalid_new();
+        {
+            /*
+             * Initialize page table with safe PTEs.
+             * Use memzero first to clear, then write safe PTEs and flush.
+             */
+            pte_t safe_pte = pte_pte_invalid_new();
+            pte_t *pt = (pte_t *)regionBase;
+            word_t paddr = addrFromPPtr(regionBase);
+
+            /* Step 1: Zero the memory using memzero (provided by seL4) */
+            memzero(pt, BIT(seL4_PageTableBits));
+
+            /* Step 2: Write safe PTEs to all entries */
+            for (word_t i = 0; i < BIT(seL4_PageTableIndexBits); i++) {
+                pt[i] = safe_pte;
+            }
+
+            /* Step 3: Full cache clean+invalidate using cleanInvalidateCacheRange_RAM */
+            cleanInvalidateCacheRange_RAM((word_t)pt,
+                                          (word_t)pt + MASK(seL4_PageTableBits),
+                                          paddr);
+
         }
         cleanInvalidateCacheRange_RAM((word_t)regionBase,
                                       (word_t)regionBase + MASK(seL4_PageTableBits),
