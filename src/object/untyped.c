@@ -10,6 +10,8 @@
 #include <api/syscall.h>
 #include <api/invocation.h>
 #include <machine/io.h>
+#include <machine.h>
+#include <arch/machine.h>
 #include <object/structures.h>
 #include <object/untyped.h>
 #include <object/objecttype.h>
@@ -252,13 +254,25 @@ static exception_t resetUntypedCap(cte_t *srcSlot)
 
     if (deviceMemory || block_size < chunk) {
         if (! deviceMemory) {
+            /* Evict any stale dirty cache lines before zeroing memory.
+             * This prevents asynchronous cache writeback from overwriting
+             * new data written to this memory region (e.g., page table entries).
+             * Critical for Orin AGX RAS error prevention. */
+            cleanInvalidateCacheRange_RAM((word_t)regionBase,
+                                          (word_t)regionBase + BIT(block_size) - 1,
+                                          addrFromPPtr(regionBase));
             clearMemory(regionBase, block_size);
         }
         srcSlot->cap = cap_untyped_cap_set_capFreeIndex(prev_cap, 0);
     } else {
         for (offset = ROUND_DOWN(offset - 1, chunk);
              offset != - BIT(chunk); offset -= BIT(chunk)) {
-            clearMemory(GET_OFFSET_FREE_PTR(regionBase, offset), chunk);
+            void *chunkBase = GET_OFFSET_FREE_PTR(regionBase, offset);
+            /* Evict stale dirty cache lines before zeroing each chunk */
+            cleanInvalidateCacheRange_RAM((word_t)chunkBase,
+                                          (word_t)chunkBase + BIT(chunk) - 1,
+                                          addrFromPPtr(chunkBase));
+            clearMemory(chunkBase, chunk);
             srcSlot->cap = cap_untyped_cap_set_capFreeIndex(prev_cap, OFFSET_TO_FREE_INDEX(offset));
             status = preemptionPoint();
             if (status != EXCEPTION_NONE) {
