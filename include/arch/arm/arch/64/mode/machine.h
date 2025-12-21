@@ -190,6 +190,8 @@ static inline void setCurrentUserVSpaceRoot(ttbr_t ttbr)
         word_t hcr;
         MRS("hcr_el2", hcr);
 
+        dsb();
+
         /* Disable Stage 2 translation - prevents speculative PTW */
         MSR("hcr_el2", hcr & ~HCR_VM_BIT);
         dsb();

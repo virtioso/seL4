@@ -252,6 +252,36 @@ BOOT_CODE void map_kernel_window(void)
     assert(GET_KPT_INDEX(PPTR_TOP, KLVL_FRM_ARM_PT_LVL(1)) == BIT(PT_INDEX_BITS) - 1);
     assert(IS_ALIGNED(PPTR_TOP, seL4_HugePageBits));
 
+    /*
+     * Initialize ALL kernel page table entries with self-referential invalid PTEs.
+     * Each entry points back to its own page table (valid DRAM) with low bits = 0
+     * (invalid). This prevents speculative page table walks from following zero
+     * PTEs to address 0x0 (which may contain garbage on Tegra Orin that chains
+     * to invalid addresses like 0x7fffxxxx, triggering RAS errors).
+     *
+     * If PTW speculatively follows these entries, it just reads the same safe
+     * page table again - no chain to garbage memory.
+     */
+    pte_t safe_pgd = { .words[0] = addrFromKPPtr(armKSGlobalKernelPGD) & 0xfffffffff000ull };
+    pte_t safe_pud = { .words[0] = addrFromKPPtr(armKSGlobalKernelPUD) & 0xfffffffff000ull };
+    pte_t safe_pt  = { .words[0] = addrFromKPPtr(armKSGlobalKernelPT)  & 0xfffffffff000ull };
+
+    for (idx = 0; idx < BIT(PT_INDEX_BITS); idx++) {
+        armKSGlobalKernelPGD[idx] = safe_pgd;
+    }
+    for (idx = 0; idx < BIT(PT_INDEX_BITS); idx++) {
+        armKSGlobalKernelPUD[idx] = safe_pud;
+    }
+    for (word_t i = 0; i < BIT(PT_INDEX_BITS); i++) {
+        pte_t safe_pd = { .words[0] = addrFromKPPtr(&armKSGlobalKernelPDs[i][0]) & 0xfffffffff000ull };
+        for (idx = 0; idx < BIT(PT_INDEX_BITS); idx++) {
+            armKSGlobalKernelPDs[i][idx] = safe_pd;
+        }
+    }
+    for (idx = 0; idx < BIT(PT_INDEX_BITS); idx++) {
+        armKSGlobalKernelPT[idx] = safe_pt;
+    }
+
     /* place the PUD into the PGD */
     armKSGlobalKernelPGD[GET_KPT_INDEX(PPTR_BASE, KLVL_FRM_ARM_PT_LVL(0))] = pte_pte_table_new(
                                                                                  addrFromKPPtr(armKSGlobalKernelPUD));
@@ -412,6 +442,23 @@ static BOOT_CODE void init_pt_with_safe_ptes(pptr_t pptr)
                         addrFromPPtr(pt));
 }
 
+/* Initialize a VSpace root with safe invalid PTEs.
+ * VSpaces may have different size than regular page tables in hypervisor mode:
+ * - seL4_VSpaceIndexBits = 10 (1024 entries) for 40-bit PA with hypervisor
+ * - seL4_PageTableIndexBits = 9 (512 entries) for regular page tables
+ */
+static BOOT_CODE void init_vspace_with_safe_ptes(pptr_t pptr)
+{
+    pte_t *pt = (pte_t *)pptr;
+    pte_t safe_pte = pte_pte_invalid_new();
+    for (word_t i = 0; i < BIT(seL4_VSpaceIndexBits); i++) {
+        pt[i] = safe_pte;
+    }
+    /* Clean cache to ensure safe PTEs are visible to the MMU's page table walker */
+    cleanCacheRange_RAM((word_t)pt, ((word_t)pt) + BIT(seL4_VSpaceBits) - 1,
+                        addrFromPPtr(pt));
+}
+
 static BOOT_CODE cap_t create_it_pt_cap(cap_t vspace_cap, pptr_t pptr, vptr_t vptr, asid_t asid)
 {
     cap_t cap;
@@ -510,8 +557,11 @@ BOOT_CODE cap_t create_it_address_space(cap_t root_cnode_cap, v_region_t it_v_re
 
     /* Initialize the rootserver VSpace with safe PTEs before creating the cap.
      * This prevents speculative PTW from accessing invalid memory addresses.
+     * NOTE: Must use init_vspace_with_safe_ptes (not init_pt_with_safe_ptes)
+     * because VSpaces have seL4_VSpaceIndexBits entries (1024 in hypervisor mode)
+     * while page tables have seL4_PageTableIndexBits entries (512).
      */
-    init_pt_with_safe_ptes(rootserver.vspace);
+    init_vspace_with_safe_ptes(rootserver.vspace);
 
     /* create the PGD */
     vspace_cap = cap_vspace_cap_new(
@@ -1060,6 +1110,17 @@ void unmapPageTable(asid_t asid, vptr_t vptr, pte_t *target_pt)
     }
     /* If we found a pt then ptSlot won't be null */
     assert(ptSlot != NULL);
+
+    /*
+     * DSB before modifying PTE: Wait for any in-flight speculative page table
+     * walks to complete. Per ARM ARM R_LFHQG, speculative PTW started at EL0/EL1
+     * can continue while running at EL2. Without this barrier, speculative
+     * walkers might read a partially-modified PTE or race with our write.
+     * See: KVM commit "Synchronise speculative page table walks on translation
+     * regime change" (2023).
+     */
+    dsb();
+
     *ptSlot = pte_pte_invalid_new();
     /* Use dc civac (PoC) for page table writes - MMU walker reads from PoC */
     cleanInvalByVA((vptr_t)ptSlot, pptr_to_paddr(ptSlot));
@@ -1093,6 +1154,16 @@ void unmapPage(vm_page_size_t page_size, asid_t asid, vptr_t vptr, pptr_t pptr)
         /* Do nothing if the mapped page is not the same physical frame */
         return;
     }
+
+    /*
+     * DSB before modifying PTE: Wait for any in-flight speculative page table
+     * walks to complete. Per ARM ARM R_LFHQG, speculative PTW started at EL0/EL1
+     * can continue while running at EL2. Without this barrier, speculative
+     * walkers might read a partially-modified PTE or race with our write.
+     * See: KVM commit "Synchronise speculative page table walks on translation
+     * regime change" (2023).
+     */
+    dsb();
 
     *(lu_ret.ptSlot) = pte_pte_invalid_new();
     /* Use dc civac (PoC) for page table writes - MMU walker reads from PoC */
@@ -1254,14 +1325,34 @@ static exception_t performPageInvocationMap(asid_t asid, cap_t cap, cte_t *ctSlo
     bool_t tlbflush_required = pte_ptr_get_valid(ptSlot);
 
     ctSlot->cap = cap;
-    *ptSlot = pte;
 
-    /* Use dc civac (PoC) for page table writes - MMU walker reads from PoC */
-    cleanInvalByVA((vptr_t)ptSlot, pptr_to_paddr(ptSlot));
+    /*
+     * ARM Break-Before-Make (BBM) requirement: When changing an existing valid
+     * mapping, we must invalidate the old entry before installing the new one.
+     * Per ARM ARM, failure to do so can result in unpredictable behavior including
+     * TLB conflicts and speculative walks reading inconsistent data.
+     *
+     * Sequence for remapping:
+     * 1. Write invalid PTE (breaks the old mapping)
+     * 2. DSB + cache flush + TLBI (ensure old entry is fully invalidated)
+     * 3. DSB (wait for TLBI to complete)
+     * 4. Write new PTE (make the new mapping)
+     */
     if (unlikely(tlbflush_required)) {
+        /* Step 1: Break old mapping with safe invalid PTE */
+        dsb();
+        *ptSlot = pte_pte_invalid_new();
+        cleanInvalByVA((vptr_t)ptSlot, pptr_to_paddr(ptSlot));
+
+        /* Step 2-3: Invalidate old TLB entry and wait */
         assert(asid < BIT(16));
         invalidateTLBByASIDVA(asid, cap_frame_cap_get_capFMappedAddress(cap));
+        dsb();
     }
+
+    /* Step 4 (or initial mapping): Write new PTE */
+    *ptSlot = pte;
+    cleanInvalByVA((vptr_t)ptSlot, pptr_to_paddr(ptSlot));
 
     return EXCEPTION_NONE;
 }
