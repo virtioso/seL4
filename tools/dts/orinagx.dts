@@ -153,4 +153,77 @@
 		/* 768MB RAM starting at 0x80000000 */
 		reg = <0x0 0x80000000 0x0 0x30000000>;
 	};
+
+	/* HSP Top0 - Hardware Synchronization Primitives */
+	hsp_top0: tegra-hsp@3c00000 {
+		compatible = "nvidia,tegra234-hsp", "nvidia,tegra194-hsp";
+		reg = <0x0 0x03c00000 0x0 0xa0000>;
+		interrupts = <0x0 176 0x4>,   /* doorbell */
+			     <0x0 120 0x4>,   /* shared0 */
+			     <0x0 121 0x4>,   /* shared1 */
+			     <0x0 122 0x4>,   /* shared2 */
+			     <0x0 123 0x4>,   /* shared3 */
+			     <0x0 124 0x4>,   /* shared4 */
+			     <0x0 125 0x4>,   /* shared5 */
+			     <0x0 126 0x4>,   /* shared6 */
+			     <0x0 127 0x4>;   /* shared7 */
+		interrupt-names = "doorbell", "shared0", "shared1", "shared2",
+				  "shared3", "shared4", "shared5", "shared6",
+				  "shared7";
+		#mbox-cells = <2>;
+		status = "okay";
+	};
+
+	/* HSP AON - for TCU communication */
+	hsp_aon: tegra-hsp@c150000 {
+		compatible = "nvidia,tegra234-hsp", "nvidia,tegra194-hsp";
+		reg = <0x0 0x0c150000 0x0 0x90000>;
+		interrupts = <0x0 133 0x4>,   /* shared1 */
+			     <0x0 134 0x4>,   /* shared2 */
+			     <0x0 135 0x4>,   /* shared3 */
+			     <0x0 136 0x4>;   /* shared4 */
+		interrupt-names = "shared1", "shared2", "shared3", "shared4";
+		#mbox-cells = <2>;
+		status = "okay";
+	};
+
+	/* SRAM for BPMP shared memory */
+	sram@40000000 {
+		compatible = "nvidia,tegra234-sysram", "mmio-sram";
+		reg = <0x0 0x40000000 0x0 0x80000>;
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges = <0x0 0x0 0x40000000 0x80000>;
+		no-memory-wc;
+
+		cpu_bpmp_tx: sram@70000 {
+			reg = <0x70000 0x1000>;
+			label = "cpu-bpmp-tx";
+			pool;
+		};
+
+		cpu_bpmp_rx: sram@71000 {
+			reg = <0x71000 0x1000>;
+			label = "cpu-bpmp-rx";
+			pool;
+		};
+	};
+
+	/* BPMP - Boot and Power Management Processor */
+	bpmp: bpmp {
+		compatible = "nvidia,tegra234-bpmp", "nvidia,tegra186-bpmp";
+		mboxes = <&hsp_top0 0x2 0x13>;  /* DB type, BPMP master */
+		shmem = <&cpu_bpmp_tx>, <&cpu_bpmp_rx>;
+		#clock-cells = <1>;
+		#reset-cells = <1>;
+		#power-domain-cells = <1>;
+		status = "okay";
+
+		bpmp_i2c: i2c {
+			compatible = "nvidia,tegra186-bpmp-i2c";
+			nvidia,bpmp-bus-id = <5>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+	};
 };
