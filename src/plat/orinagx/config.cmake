@@ -23,6 +23,11 @@ if(KernelPlatformOrinAGX)
     set(KernelArmExportPCNTUser ON)
     set(KernelArmExportPTMRUser ON)
 
+    # SDEI RAS event configuration for Tegra T234
+    # ATF dispatches per-CPU RAS events 300-311 (one per core)
+    set(KernelArmSdeiEventBase 300)
+    set(KernelArmSdeiEventCount 12)
+
     config_set(KernelARMPlatform ARM_PLAT orinagx)
     # Note: We don't set KernelArmMach because Orin uses SBSA UART
     # (not the legacy nvidia UARTs from TX1/TX2)
@@ -44,3 +49,9 @@ add_sources(
     CFILES src/arch/arm/machine/l2c_nop.c src/arch/arm/machine/gic_v3.c
 )
 
+# Platform-specific SDEI handler for RAS errors.
+# Overrides weak default to halt on uncorrectable hardware errors.
+add_sources(
+    DEP "KernelPlatformOrinAGX;KernelArmSdei"
+    CFILES src/plat/orinagx/machine/sdei_handler.c
+)
