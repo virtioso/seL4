@@ -94,6 +94,31 @@ config_option(
 
 config_option(KernelArmGicV3 ARM_GIC_V3_SUPPORT "Build support for GICv3" DEFAULT OFF)
 
+config_option(
+    KernelArmSdei ARM_SDEI
+    "Enable SDEI (Software Delegated Exception Interface) support. \
+    When enabled, the kernel registers SDEI handlers with ARM Trusted Firmware \
+    to receive firmware-delegated events. Event behavior is platform-specific. \
+    Requires ARM64."
+    DEFAULT OFF
+    DEPENDS "KernelSel4ArchAarch64"
+    DEFAULT_DISABLED OFF
+)
+
+# SDEI event configuration - must be set by platform config.cmake
+# Platforms enabling KernelArmSdei must define:
+#   KernelArmSdeiEventBase  - First SDEI event number to register
+#   KernelArmSdeiEventCount - Number of consecutive events to register
+if(KernelArmSdei)
+    if(NOT DEFINED KernelArmSdeiEventBase OR NOT DEFINED KernelArmSdeiEventCount)
+        message(FATAL_ERROR
+            "KernelArmSdei requires KernelArmSdeiEventBase and KernelArmSdeiEventCount "
+            "to be defined in the platform's config.cmake")
+    endif()
+    config_set(KernelArmSdeiEventBase ARM_SDEI_EVENT_BASE "${KernelArmSdeiEventBase}")
+    config_set(KernelArmSdeiEventCount ARM_SDEI_EVENT_COUNT "${KernelArmSdeiEventCount}")
+endif()
+
 if(KernelArmPASizeBits40 AND KernelArmHypervisorSupport)
     config_set(KernelAarch64VspaceS2StartL1 AARCH64_VSPACE_S2_START_L1 "ON")
 else()
@@ -288,5 +313,12 @@ add_sources(
 )
 
 add_bf_source_old("KernelArchARM" "structures.bf" "include/arch/arm" "arch/object")
+
+# SDEI event handler (requires ARM64)
+add_sources(
+    DEP "KernelArmSdei"
+    PREFIX src/arch/arm
+    CFILES machine/sdei.c
+)
 
 include(src/arch/arm/${KernelWordSize}/config.cmake)
