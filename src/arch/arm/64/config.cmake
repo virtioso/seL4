@@ -14,6 +14,7 @@ add_sources(
            machine/registerset.c
            machine/fpu.c
            machine/debug.c
+           machine/cache.c
            model/statedata.c
            c_traps.c
            idle.c

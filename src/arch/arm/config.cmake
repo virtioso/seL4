@@ -270,7 +270,6 @@ add_sources(
         benchmark/benchmark.c
         kernel/boot.c
         kernel/thread.c
-        machine/cache.c
         machine/errata.c
         machine/debug.c
         machine/hardware.c

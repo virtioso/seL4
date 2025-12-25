@@ -1,108 +1,105 @@
 /*
  * Copyright 2020, Data61, CSIRO (ABN 41 687 119 230)
+ * Copyright 2025, Technology Innovation Institute
  *
  * SPDX-License-Identifier: GPL-2.0-only
+ *
+ * ARM64 boot-time cache flush wrappers.
+ *
+ * These functions determine the boot memory region and delegate to
+ * cleanInvalidateCacheRange_RAM() for the actual cache maintenance.
+ *
+ * WHY WE FLUSH A REGION INSTEAD OF "WHOLE CACHE":
+ *
+ * Set/way cache operations (dc cisw/csw) are architecturally broken on ARM64:
+ *
+ * 1. Race with CPU speculation: ARM ARM D4.4.1 states set/way ops "operate on
+ *    caches private to the PE". Speculative fetches can re-fill cache lines
+ *    between set/way ops and DSB completion.
+ *
+ * 2. Not broadcast to other CPUs in SMP systems.
+ *
+ * 3. Don't affect system-level caches (L3, SLC) which only respect VA-based ops.
+ *
+ * Linux ARM64 removed flush_cache_all() in 2015 for these reasons:
+ *   "The documented semantics of flush_cache_all are not possible to provide
+ *    for arm64" — Mark Rutland, ARM Ltd
+ *
+ * Instead, we flush known boot memory regions by VA using dc civac.
  */
 
+#include <config.h>
+#include <arch/machine.h>
 #include <arch/machine/hardware.h>
+#include <kernel/boot.h>
 
-static inline void cleanByWSL(word_t wsl)
+/*
+ * Determine memory region to flush during boot.
+ *
+ * Called at two points during boot:
+ *
+ * 1. Early boot (init_cpu -> activate_kernel_vspace):
+ *    rootserver.paging.end == 0 because init_freemem hasn't run yet.
+ *    We flush kernel image + initial page tables only.
+ *
+ * 2. Late boot (after arch_init_freemem):
+ *    rootserver.paging.end is set to the end of allocated page tables.
+ *    We flush up to rootserver allocations + margin.
+ *
+ * The 2MB margin covers any additional structures allocated after the
+ * rootserver paging region.
+ */
+static void get_boot_flush_region(word_t *start, word_t *end)
 {
-    asm volatile("dc csw, %0" : : "r"(wsl));
+    /* Start of physical memory (virtual address) */
+    *start = (word_t)ptrFromPAddr(physBase());
+
+    if (rootserver.paging.end != 0) {
+        /* After init_freemem: use actual allocation end + margin */
+        *end = rootserver.paging.end + (2 * 1024 * 1024);
+    } else {
+        /*
+         * Early boot (activate_kernel_vspace in init_cpu):
+         * rootserver not yet initialized.
+         * Flush kernel image + initial page tables only.
+         * ki_end is the end of the kernel ELF image.
+         */
+        *end = (word_t)ki_end + (2 * 1024 * 1024);
+    }
 }
 
-static inline void cleanInvalidateByWSL(word_t wsl)
-{
-    asm volatile("dc cisw, %0" : : "r"(wsl));
-}
-
-static inline word_t readCLID(void)
-{
-    word_t CLID;
-    MRS("clidr_el1", CLID);
-    return CLID;
-}
-
-#define LOUU(x)    (((x) >> 27)        & MASK(3))
-#define LOC(x)     (((x) >> 24)        & MASK(3))
-#define LOUIS(x)   (((x) >> 21)        & MASK(3))
-#define CTYPE(x,n) (((x) >> (n*3))     & MASK(3))
-
-enum arm_cache_type {
-    ARMCacheI =    1,
-    ARMCacheD =    2,
-    ARMCacheID =   3,
-};
-
-static inline word_t readCacheSize(int level, bool_t instruction)
-{
-    word_t size, csselr_old;
-    /* Save CSSELR */
-    MRS("csselr_el1", csselr_old);
-    /* Select cache level */
-    MSR("csselr_el1", ((level << 1) | instruction));
-    /* Read 'size' */
-    MRS("ccsidr_el1", size);
-    /* Restore CSSELR */
-    MSR("csselr_el1", csselr_old);
-    return size;
-}
-
-#define LINEBITS(s)     (((s) & MASK(3)) + 4)
-#define ASSOC(s)        ((((s) >> 3) & MASK(10)) + 1)
-#define NSETS(s)        ((((s) >> 13) & MASK(15)) + 1)
-
+/*
+ * Clean D-cache to Point of Unification.
+ *
+ * Despite the name, we use cleanInvalidateCacheRange_RAM (dc civac = PoC)
+ * because PoC is more conservative and handles system-level caches.
+ */
 void clean_D_PoU(void)
 {
-    int clid = readCLID();
-    int lou = LOUU(clid);
-
-    for (int l = 0; l < lou; l++) {
-        if (CTYPE(clid, l) > ARMCacheI) {
-            word_t lsize = readCacheSize(l, 0);
-            int lbits = LINEBITS(lsize);
-            int assoc = ASSOC(lsize);
-            int assoc_bits = wordBits - clzl(assoc - 1);
-            int nsets = NSETS(lsize);
-            for (int w = 0; w < assoc; w++) {
-                for (int s = 0; s < nsets; s++) {
-                    cleanByWSL((w << (32 - assoc_bits)) |
-                               (s << lbits) | (l << 1));
-                }
-            }
-        }
-    }
+    word_t start, end;
+    get_boot_flush_region(&start, &end);
+    cleanInvalidateCacheRange_RAM(start, end - 1, addrFromKPPtr((void *)start));
 }
 
-static inline void cleanInvalidate_D_by_level(int l)
-{
-    word_t lsize = readCacheSize(l, 0);
-    int lbits = LINEBITS(lsize);
-    int assoc = ASSOC(lsize);
-    int assoc_bits = wordBits - clzl(assoc - 1);
-    int nsets = NSETS(lsize);
-
-    for (int w = 0; w < assoc; w++) {
-        for (int s = 0; s < nsets; s++) {
-            cleanInvalidateByWSL((w << (32 - assoc_bits)) |
-                                 (s << lbits) | (l << 1));
-        }
-    }
-}
-
+/*
+ * Clean and invalidate D-cache to Point of Coherency.
+ */
 void cleanInvalidate_D_PoC(void)
 {
-    int clid = readCLID();
-    int loc = LOC(clid);
-
-    for (int l = 0; l < loc; l++) {
-        if (CTYPE(clid, l) > ARMCacheI) {
-            cleanInvalidate_D_by_level(l);
-        }
-    }
+    word_t start, end;
+    get_boot_flush_region(&start, &end);
+    cleanInvalidateCacheRange_RAM(start, end - 1, addrFromKPPtr((void *)start));
 }
 
+/*
+ * Clean and invalidate L1 D-cache.
+ *
+ * On ARM64 with unified caches, there's no way to target only L1.
+ * We flush the boot region which naturally affects L1 first.
+ */
 void cleanInvalidate_L1D(void)
 {
-    cleanInvalidate_D_by_level(0);
+    word_t start, end;
+    get_boot_flush_region(&start, &end);
+    cleanInvalidateCacheRange_RAM(start, end - 1, addrFromKPPtr((void *)start));
 }

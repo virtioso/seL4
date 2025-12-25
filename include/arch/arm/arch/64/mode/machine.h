@@ -282,45 +282,66 @@ static inline void invalidateLocalTLB_IPA(word_t ipa)
 
 void lockTLBEntry(vptr_t vaddr);
 
-static inline void cleanByVA(vptr_t vaddr, paddr_t paddr)
+/*
+ * D-cache maintenance helpers.
+ *
+ * ARM ARM barrier pattern for cache maintenance:
+ *   DSB ISHST - ensure prior stores visible before maintenance
+ *   DC xxx    - cache maintenance operation
+ *   DSB ISH   - ensure maintenance complete before continuing
+ *
+ * The paddr parameter is unused on ARM64 (VA-based ops only) but kept
+ * for API compatibility with ARM32.
+ */
+
+static inline void cleanByVA(vptr_t vaddr, paddr_t UNUSED paddr)
 {
-    asm volatile("dc cvac, %0" : : "r"(vaddr));
-    dmb();
+    asm volatile("dsb ishst" ::: "memory");
+    asm volatile("dc cvac, %0" : : "r"(vaddr) : "memory");
+    asm volatile("dsb ish" ::: "memory");
 }
 
-static inline void cleanByVA_PoU(vptr_t vaddr, paddr_t paddr)
+static inline void cleanByVA_PoU(vptr_t vaddr, paddr_t UNUSED paddr)
 {
-    asm volatile("dc cvau, %0" : : "r"(vaddr));
-    dmb();
+    asm volatile("dsb ishst" ::: "memory");
+    asm volatile("dc cvau, %0" : : "r"(vaddr) : "memory");
+    asm volatile("dsb ish" ::: "memory");
 }
 
-static inline void invalidateByVA(vptr_t vaddr, paddr_t paddr)
+static inline void invalidateByVA(vptr_t vaddr, paddr_t UNUSED paddr)
 {
-    asm volatile("dc ivac, %0" : : "r"(vaddr));
-    dmb();
+    /* For invalidate-only, use full dsb ish (not ishst) before to ensure
+     * prior operations complete before discarding cache contents */
+    asm volatile("dsb ish" ::: "memory");
+    asm volatile("dc ivac, %0" : : "r"(vaddr) : "memory");
+    asm volatile("dsb ish" ::: "memory");
 }
 
-static inline void invalidateByVA_I(vptr_t vaddr, paddr_t paddr)
+static inline void invalidateByVA_I(vptr_t vaddr, paddr_t UNUSED paddr)
 {
-    asm volatile("ic ivau, %0" : : "r"(vaddr));
-    dsb();
+    asm volatile("dsb ish" ::: "memory");
+    asm volatile("ic ivau, %0" : : "r"(vaddr) : "memory");
+    asm volatile("dsb ish" ::: "memory");
     isb();
 }
 
 static inline void invalidate_I_PoU(void)
 {
+    asm volatile("dsb ish" ::: "memory");
 #ifdef CONFIG_ENABLE_SMP_SUPPORT
-    asm volatile("ic ialluis");
+    asm volatile("ic ialluis" ::: "memory");
 #else
-    asm volatile("ic iallu");
+    asm volatile("ic iallu" ::: "memory");
 #endif
+    asm volatile("dsb ish" ::: "memory");
     isb();
 }
 
-static inline void cleanInvalByVA(vptr_t vaddr, paddr_t paddr)
+static inline void cleanInvalByVA(vptr_t vaddr, paddr_t UNUSED paddr)
 {
-    asm volatile("dc civac, %0" : : "r"(vaddr));
-    dsb();
+    asm volatile("dsb ishst" ::: "memory");
+    asm volatile("dc civac, %0" : : "r"(vaddr) : "memory");
+    asm volatile("dsb ish" ::: "memory");
 }
 
 static inline void branchFlush(vptr_t vaddr, paddr_t paddr)
