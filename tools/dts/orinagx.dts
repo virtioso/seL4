@@ -148,10 +148,10 @@
 		status = "okay";
 	};
 
-	memory@80000000 {
+	memory@80400000 {
 		device_type = "memory";
-		/* 768MB RAM starting at 0x80000000 */
-		reg = <0x0 0x80000000 0x0 0x30000000>;
+		/* 4092MB RAM starting at 0x80400000 */
+		reg = <0x0 0x80400000 0x0 0xFFC00000>;
 	};
 
 	/* HSP Top0 - Hardware Synchronization Primitives */
