@@ -148,6 +148,21 @@
 		status = "okay";
 	};
 
+	/*
+	 * UARTI - SBSA UART for VM console
+	 * Using "arm,sbsa-uart" which is simpler than PL011 and doesn't
+	 * require clocks (SBSA spec mandates fixed 115200 baud).
+	 * Physical address: 0x31d0000, Interrupt: SPI 146 (0x92)
+	 */
+	uarti: serial@31d0000 {
+		compatible = "arm,sbsa-uart";
+		reg = <0x0 0x031d0000 0x0 0x1000>;
+		reg-io-width = <4>;           /* 32-bit MMIO access */
+		interrupts = <0x0 0x92 0x4>;  /* SPI 146, level high */
+		current-speed = <115200>;
+		status = "okay";
+	};
+
 	memory@80400000 {
 		device_type = "memory";
 		/* 4092MB RAM starting at 0x80400000 */
