@@ -18,6 +18,8 @@
 
 	chosen {
 		stdout-path = "serial0:115200n8";
+		/* MAC address for MGBE0 (nvidia,mac-addr-idx=0) */
+		nvidia,ether-mac0 = "02:04:06:08:0a:0c";
 	};
 
 	aliases {
@@ -262,6 +264,97 @@
 			supports-cqe;
 			status = "okay";
 		};
+
+		/*
+		 * P2U PHY for MGBE0 - Tegra SerDes PHY
+		 * Physical address: 0x3f20000, Interrupt: SPI 203
+		 */
+		p2u_gbe_0: phy@3f20000 {
+			compatible = "nvidia,tegra234-p2u";
+			reg = <0x0 0x03f20000 0x0 0x10000>;
+			reg-names = "ctl";
+			interrupts = <0x0 203 0x4>;   /* SPI 203, level high */
+			interrupt-names = "intr";
+			nvidia,bpmp = <&bpmp 16>;
+			#phy-cells = <0>;
+			status = "okay";
+		};
+
+		/*
+		 * MGBE0 - Multi-Gigabit Ethernet controller
+		 * Physical address: 0x6800000, Interrupts: SPI 384 (common), SPI 385 (vm0)
+		 * Clocks/resets managed via BPMP
+		 */
+		ethernet@6800000 {
+			compatible = "nvidia,tegra234-mgbe";
+			reg = <0x0 0x06800000 0x0 0x10000>,
+			      <0x0 0x06810000 0x0 0x10000>,
+			      <0x0 0x068a0000 0x0 0x10000>,
+			      <0x0 0x068d0000 0x0 0x10000>;
+			reg-names = "hypervisor", "mac", "xpcs", "macsec-base";
+			interrupts = <0x0 384 0x4>,   /* SPI 384 - common */
+				     <0x0 385 0x4>;    /* SPI 385 - vm0 (DMA channel 0) */
+			interrupt-names = "common", "vm0";
+			/* nvidia,vm-irq-config phandle is set by fdt_plat_customize() */
+			clocks = <&bpmp 357>,  /* MGBE0_RX_INPUT_M */
+				 <&bpmp 361>,  /* MGBE0_RX_PCS_M */
+				 <&bpmp 369>,  /* MGBE0_RX_PCS_INPUT */
+				 <&bpmp 373>,  /* MGBE0_RX_PCS */
+				 <&bpmp 374>,  /* MGBE0_TX */
+				 <&bpmp 375>,  /* MGBE0_TX_PCS */
+				 <&bpmp 376>,  /* MGBE0_MAC_DIVIDER */
+				 <&bpmp 377>,  /* MGBE0_MAC */
+				 <&bpmp 379>,  /* MGBE0_EEE_PCS */
+				 <&bpmp 380>,  /* MGBE0_APP */
+				 <&bpmp 381>,  /* MGBE0_PTP_REF */
+				 <&bpmp 378>,  /* MGBE0_MACSEC */
+				 <&bpmp 248>;  /* MGBE0_RX_INPUT */
+			clock-names = "rx-input-m", "rx-pcs-m", "rx-pcs-input",
+				      "rx-pcs", "tx", "tx-pcs", "mac-divider",
+				      "mac", "eee-pcs", "mgbe", "ptp-ref",
+				      "mgbe_macsec", "rx-input";
+			resets = <&bpmp 46>,   /* TEGRA234_RESET_MGBE0_MAC */
+				 <&bpmp 45>;   /* TEGRA234_RESET_MGBE0_PCS */
+			reset-names = "mac", "pcs";
+			phys = <&p2u_gbe_0>;
+			phy-mode = "10gbase-r";
+			power-domains = <&bpmp 17>;  /* TEGRA234_POWER_DOMAIN_MGBEA */
+
+			/* NVIDIA driver required properties */
+			nvidia,num-dma-chans = <1>;
+			nvidia,dma-chans = <0>;
+			nvidia,num-mtl-queues = <1>;
+			nvidia,mtl-queues = <0>;
+			nvidia,tc-mapping = <0>;
+			nvidia,residual-queue = <0>;
+			nvidia,rxq_enable_ctrl = <2>;
+			nvidia,tx-queue-prio = <0>;
+			nvidia,rx-queue-prio = <0x1>;
+			nvidia,ptp_ref_clock_speed = <312500000>;
+			nvidia,instance_id = <0>;
+			nvidia,ptp-rx-queue = <0>;
+			nvidia,dma_rx_ring_sz = <1024>;
+			nvidia,dma_tx_ring_sz = <1024>;
+			nvidia,promisc_mode = <1>;
+			nvidia,macsec-enable = <0>;
+			nvidia,mac-addr-idx = <0>;
+			local-mac-address = [00 00 00 00 00 00];  /* Filled by bootloader or use random */
+			dma-coherent;
+			phy-handle = <&mgbe0_phy>;
+			status = "okay";
+
+			/* Internal PHY via MDIO */
+			mdio {
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				mgbe0_phy: phy@0 {
+					compatible = "ethernet-phy-ieee802.3-c45";
+					reg = <0x0>;
+					#phy-cells = <0>;
+				};
+			};
+		};
 	};
 
 	/* SRAM for BPMP shared memory */
@@ -283,6 +376,23 @@
 			reg = <0x71000 0x1000>;
 			label = "cpu-bpmp-rx";
 			pool;
+		};
+	};
+
+	/*
+	 * MGBE VM IRQ configuration
+	 * Maps DMA channels to VM IRQs. Required by nvethernet driver for MGBE.
+	 * Despite the "VM" name, this is used even on bare metal.
+	 * Single VM IRQ (vm0) handles our single DMA channel (channel 0).
+	 */
+	mgbe_vm_irq_config: mgbe-vm-irq-config {
+		nvidia,num-vm-irqs = <1>;
+
+		vm_irq0 {
+			nvidia,vm-irq-id = <0>;
+			nvidia,vm-num = <0>;
+			nvidia,num-vm-channels = <1>;
+			nvidia,vm-channels = <0>;  /* DMA channel 0 */
 		};
 	};
 
