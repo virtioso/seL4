@@ -233,6 +233,35 @@
 			#mbox-cells = <2>;
 			status = "okay";
 		};
+
+		/*
+		 * SDMMC4 - Internal eMMC controller
+		 * Physical address: 0x3460000, Interrupt: SPI 65
+		 * Clocks/resets managed via BPMP
+		 */
+		mmc@3460000 {
+			compatible = "nvidia,tegra234-sdhci", "nvidia,tegra186-sdhci";
+			reg = <0x0 0x03460000 0x0 0x20000>;
+			interrupts = <0x0 65 0x4>;    /* SPI 65, level high */
+			clocks = <&bpmp 123>,         /* TEGRA234_CLK_SDMMC4 */
+				 <&bpmp 219>;         /* TEGRA234_CLK_SDMMC_LEGACY_TM */
+			clock-names = "sdhci", "tmclk";
+			resets = <&bpmp 85>;          /* TEGRA234_RESET_SDMMC4 */
+			reset-names = "sdhci";
+			nvidia,pad-autocal-pull-up-offset-hs400 = <0x00>;
+			nvidia,pad-autocal-pull-down-offset-hs400 = <0x00>;
+			nvidia,pad-autocal-pull-up-offset-1v8-timeout = <0x0a>;
+			nvidia,pad-autocal-pull-down-offset-1v8-timeout = <0x0a>;
+			nvidia,pad-autocal-pull-up-offset-3v3-timeout = <0x0a>;
+			nvidia,pad-autocal-pull-down-offset-3v3-timeout = <0x0a>;
+			nvidia,default-tap = <0x8>;
+			nvidia,default-trim = <0x14>;
+			nvidia,dqs-trim = <40>;
+			bus-width = <8>;
+			non-removable;
+			supports-cqe;
+			status = "okay";
+		};
 	};
 
 	/* SRAM for BPMP shared memory */
