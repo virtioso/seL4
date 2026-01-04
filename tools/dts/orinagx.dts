@@ -127,79 +127,112 @@
 		always-on;
 	};
 
-	gic: interrupt-controller@f400000 {
-		compatible = "arm,gic-v3";
-		reg = <0x0 0x0f400000 0x0 0x010000>,  /* GICD */
-		      <0x0 0x0f440000 0x0 0x200000>;  /* GICR */
-		#redistributor-regions = <1>;
-		#interrupt-cells = <0x3>;
-		interrupt-controller;
-		interrupts = <0x1 0x9 0x4>;  /* GIC maintenance interrupt */
-	};
-
-	/*
-	 * TCU (Tegra Combined UART) uses HSP shared mailbox.
-	 * HSP AON base: 0x0c150000, SM TX(1) offset: 0x18000
-	 * Result: 0x0c168000
-	 */
-	tcu: serial@c168000 {
-		compatible = "nvidia,tegra234-tcu";
-		reg = <0x0 0x0c168000 0x0 0x1000>;
-		status = "okay";
-	};
-
-	/*
-	 * UARTI - SBSA UART for VM console
-	 * Using "arm,sbsa-uart" which is simpler than PL011 and doesn't
-	 * require clocks (SBSA spec mandates fixed 115200 baud).
-	 * Physical address: 0x31d0000, Interrupt: SPI 146 (0x92)
-	 */
-	uarti: serial@31d0000 {
-		compatible = "arm,sbsa-uart";
-		reg = <0x0 0x031d0000 0x0 0x1000>;
-		reg-io-width = <4>;           /* 32-bit MMIO access */
-		interrupts = <0x0 0x92 0x4>;  /* SPI 146, level high */
-		current-speed = <115200>;
-		status = "okay";
-	};
-
 	memory@80400000 {
 		device_type = "memory";
 		/* 4092MB RAM starting at 0x80400000 */
 		reg = <0x0 0x80400000 0x0 0xFFC00000>;
 	};
 
-	/* HSP Top0 - Hardware Synchronization Primitives */
-	hsp_top0: tegra-hsp@3c00000 {
-		compatible = "nvidia,tegra234-hsp", "nvidia,tegra194-hsp";
-		reg = <0x0 0x03c00000 0x0 0xa0000>;
-		interrupts = <0x0 176 0x4>,   /* doorbell */
-			     <0x0 120 0x4>,   /* shared0 */
-			     <0x0 121 0x4>,   /* shared1 */
-			     <0x0 122 0x4>,   /* shared2 */
-			     <0x0 123 0x4>,   /* shared3 */
-			     <0x0 124 0x4>,   /* shared4 */
-			     <0x0 125 0x4>,   /* shared5 */
-			     <0x0 126 0x4>,   /* shared6 */
-			     <0x0 127 0x4>;   /* shared7 */
-		interrupt-names = "doorbell", "shared0", "shared1", "shared2",
-				  "shared3", "shared4", "shared5", "shared6",
-				  "shared7";
-		#mbox-cells = <2>;
+	/*
+	 * TCU (Tegra Combined UART) - for seL4 kernel console.
+	 * Has reg property pointing to HSP AON SM TX mailbox for UART_PPTR.
+	 */
+	tcu: serial {
+		compatible = "nvidia,tegra234-tcu";
+		reg = <0x0 0x0c168000 0x0 0x1000>;
+		mboxes = <&hsp_aon 0 0x13000001>;
+		mbox-names = "tx";
 		status = "okay";
 	};
 
-	/* HSP AON - for TCU communication */
-	hsp_aon: tegra-hsp@c150000 {
-		compatible = "nvidia,tegra234-hsp", "nvidia,tegra194-hsp";
-		reg = <0x0 0x0c150000 0x0 0x90000>;
-		interrupts = <0x0 133 0x4>,   /* shared1 */
-			     <0x0 134 0x4>,   /* shared2 */
-			     <0x0 135 0x4>,   /* shared3 */
-			     <0x0 136 0x4>;   /* shared4 */
-		interrupt-names = "shared1", "shared2", "shared3", "shared4";
-		#mbox-cells = <2>;
+	/*
+	 * TCU for guest VM passthrough - no reg property.
+	 * Linux TCU driver works purely via mboxes, no dedicated MMIO needed.
+	 * This avoids overlap with HSP AON's device frame region.
+	 */
+	tcu_guest: serial-guest {
+		compatible = "nvidia,tegra234-tcu", "nvidia,tegra194-tcu";
+		mboxes = <&hsp_aon 0 0x13000001>;
+		mbox-names = "tx";
 		status = "okay";
+	};
+
+	/*
+	 * bus@0 - simple-bus for memory-mapped peripherals
+	 * Matches L4T DTB structure for consistent paths
+	 */
+	bus@0 {
+		compatible = "simple-bus";
+		#address-cells = <0x2>;
+		#size-cells = <0x2>;
+		ranges = <0x0 0x0 0x0 0x0 0x100 0x0>;  /* 1:1 mapping */
+
+		gic: interrupt-controller@f400000 {
+			compatible = "arm,gic-v3";
+			reg = <0x0 0x0f400000 0x0 0x010000>,  /* GICD */
+			      <0x0 0x0f440000 0x0 0x200000>;  /* GICR */
+			#redistributor-regions = <1>;
+			#interrupt-cells = <0x3>;
+			interrupt-controller;
+			interrupts = <0x1 0x9 0x4>;  /* GIC maintenance interrupt */
+		};
+
+		/*
+		 * APB MISC - Tegra APB miscellaneous registers
+		 * Required for tegra_is_silicon() used by BPMP driver
+		 */
+		misc@100000 {
+			compatible = "nvidia,tegra234-misc";
+			reg = <0x0 0x00100000 0x0 0xf000>,    /* MISC base */
+			      <0x0 0x0010f000 0x0 0x1000>;    /* STRAPPING_OPT_A */
+			status = "okay";
+		};
+
+		/*
+		 * UARTI - SBSA UART for VM console
+		 * Physical address: 0x31d0000, Interrupt: SPI 146 (0x92)
+		 */
+		uarti: serial@31d0000 {
+			compatible = "arm,sbsa-uart";
+			reg = <0x0 0x031d0000 0x0 0x1000>;
+			reg-io-width = <4>;           /* 32-bit MMIO access */
+			interrupts = <0x0 0x92 0x4>;  /* SPI 146, level high */
+			current-speed = <115200>;
+			status = "okay";
+		};
+
+		/* HSP Top0 - Hardware Synchronization Primitives */
+		hsp_top0: hsp@3c00000 {
+			compatible = "nvidia,tegra234-hsp", "nvidia,tegra194-hsp";
+			reg = <0x0 0x03c00000 0x0 0xa0000>;
+			interrupts = <0x0 176 0x4>,   /* doorbell */
+				     <0x0 120 0x4>,   /* shared0 */
+				     <0x0 121 0x4>,   /* shared1 */
+				     <0x0 122 0x4>,   /* shared2 */
+				     <0x0 123 0x4>,   /* shared3 */
+				     <0x0 124 0x4>,   /* shared4 */
+				     <0x0 125 0x4>,   /* shared5 */
+				     <0x0 126 0x4>,   /* shared6 */
+				     <0x0 127 0x4>;   /* shared7 */
+			interrupt-names = "doorbell", "shared0", "shared1", "shared2",
+					  "shared3", "shared4", "shared5", "shared6",
+					  "shared7";
+			#mbox-cells = <2>;
+			status = "okay";
+		};
+
+		/* HSP AON - for TCU communication */
+		hsp_aon: hsp@c150000 {
+			compatible = "nvidia,tegra234-hsp", "nvidia,tegra194-hsp";
+			reg = <0x0 0x0c150000 0x0 0x90000>;
+			interrupts = <0x0 133 0x4>,   /* shared1 */
+				     <0x0 134 0x4>,   /* shared2 */
+				     <0x0 135 0x4>,   /* shared3 */
+				     <0x0 136 0x4>;   /* shared4 */
+			interrupt-names = "shared1", "shared2", "shared3", "shared4";
+			#mbox-cells = <2>;
+			status = "okay";
+		};
 	};
 
 	/* SRAM for BPMP shared memory */
@@ -227,7 +260,7 @@
 	/* BPMP - Boot and Power Management Processor */
 	bpmp: bpmp {
 		compatible = "nvidia,tegra234-bpmp", "nvidia,tegra186-bpmp";
-		mboxes = <&hsp_top0 0x2 0x13>;  /* DB type, BPMP master */
+		mboxes = <&hsp_top0 0x0 0x13>;  /* type=0 (doorbell), master=19 (BPMP) */
 		shmem = <&cpu_bpmp_tx>, <&cpu_bpmp_rx>;
 		#clock-cells = <1>;
 		#reset-cells = <1>;
