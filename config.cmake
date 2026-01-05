@@ -541,13 +541,36 @@ if(DEFINED KernelDTSList AND (NOT "${KernelDTSList}" STREQUAL ""))
             file(READ ${entry} CONTENTS)
             file(APPEND "${KernelDTSIntermediate}" "${CONTENTS}")
         endforeach()
+
+        # Optionally preprocess DTS with cpp for dt-bindings support
+        set(KernelDTBindingsPath "" CACHE STRING "Path to dt-bindings headers for DTS preprocessing")
+        if(NOT "${KernelDTBindingsPath}" STREQUAL "")
+            set(KernelDTSPreprocessed "${CMAKE_CURRENT_BINARY_DIR}/kernel.dts.pp")
+            message(STATUS "Preprocessing DTS with dt-bindings from: ${KernelDTBindingsPath}")
+            execute_process(
+                COMMAND ${CMAKE_C_COMPILER} -E -nostdinc
+                        -I${KernelDTBindingsPath}
+                        -I${KernelDTBindingsPath}/dt-bindings
+                        -undef -D__DTS__ -x assembler-with-cpp
+                        -o ${KernelDTSPreprocessed}
+                        ${KernelDTSIntermediate}
+                RESULT_VARIABLE cpp_error
+            )
+            if(cpp_error)
+                message(FATAL_ERROR "DTS preprocessing failed: ${cpp_error}")
+            endif()
+            set(DTS_INPUT ${KernelDTSPreprocessed})
+        else()
+            set(DTS_INPUT ${KernelDTSIntermediate})
+        endif()
+
         # Compile DTS to DTB
         execute_process(
-            COMMAND ${DTC_TOOL} -q -I dts -O dtb -o ${KernelDTBPath} ${KernelDTSIntermediate}
+            COMMAND ${DTC_TOOL} -q -I dts -O dtb -o ${KernelDTBPath} ${DTS_INPUT}
             RESULT_VARIABLE error
         )
         if(error)
-            message(FATAL_ERROR "Failed to compile DTS to DTB: ${KernelDTSIntermediate}")
+            message(FATAL_ERROR "Failed to compile DTS to DTB: ${DTS_INPUT}")
         endif()
         # The macOS and GNU coreutils `stat` utilities have different interfaces.
         # Check if we're using the macOS version, otherwise assume GNU coreutils.

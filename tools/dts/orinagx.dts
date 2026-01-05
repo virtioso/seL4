@@ -9,6 +9,14 @@
 
 /dts-v1/;
 
+/* dt-bindings headers for symbolic constants (requires cpp preprocessing) */
+#include <dt-bindings/clock/tegra234-clock.h>
+#include <dt-bindings/gpio/tegra234-gpio.h>
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+#include <dt-bindings/memory/tegra234-mc.h>
+#include <dt-bindings/power/tegra234-powergate.h>
+#include <dt-bindings/reset/tegra234-reset.h>
+
 / {
 	model = "NVIDIA Orin AGX";
 	compatible = "nvidia,p3701-0000", "nvidia,tegra234";
@@ -180,6 +188,37 @@
 		};
 
 		/*
+		 * GPIO controller - Main GPIO
+		 * Required for PHY reset on MGBE0 Ethernet
+		 */
+		gpio: gpio@2200000 {
+			compatible = "nvidia,tegra234-gpio";
+			reg-names = "security", "gpio";
+			reg = <0x0 0x02200000 0x0 0x10000>,
+			      <0x0 0x02210000 0x0 0x10000>;
+			interrupts = <0x0 288 0x4>, <0x0 289 0x4>, <0x0 290 0x4>,
+				     <0x0 291 0x4>, <0x0 292 0x4>, <0x0 293 0x4>,
+				     <0x0 294 0x4>, <0x0 295 0x4>, <0x0 296 0x4>,
+				     <0x0 297 0x4>, <0x0 298 0x4>, <0x0 299 0x4>,
+				     <0x0 300 0x4>, <0x0 301 0x4>, <0x0 302 0x4>,
+				     <0x0 303 0x4>, <0x0 304 0x4>, <0x0 305 0x4>,
+				     <0x0 306 0x4>, <0x0 307 0x4>, <0x0 308 0x4>,
+				     <0x0 309 0x4>, <0x0 310 0x4>, <0x0 311 0x4>,
+				     <0x0 312 0x4>, <0x0 313 0x4>, <0x0 314 0x4>,
+				     <0x0 315 0x4>, <0x0 316 0x4>, <0x0 317 0x4>,
+				     <0x0 318 0x4>, <0x0 319 0x4>, <0x0 320 0x4>,
+				     <0x0 321 0x4>, <0x0 322 0x4>, <0x0 323 0x4>,
+				     <0x0 324 0x4>, <0x0 325 0x4>, <0x0 326 0x4>,
+				     <0x0 327 0x4>, <0x0 328 0x4>, <0x0 329 0x4>,
+				     <0x0 330 0x4>, <0x0 331 0x4>, <0x0 332 0x4>,
+				     <0x0 333 0x4>, <0x0 334 0x4>, <0x0 335 0x4>;
+			#interrupt-cells = <2>;
+			interrupt-controller;
+			#gpio-cells = <2>;
+			gpio-controller;
+		};
+
+		/*
 		 * APB MISC - Tegra APB miscellaneous registers
 		 * Required for tegra_is_silicon() used by BPMP driver
 		 */
@@ -282,68 +321,48 @@
 
 		/*
 		 * MGBE0 - Multi-Gigabit Ethernet controller
-		 * Physical address: 0x6800000, Interrupts: SPI 384 (common), SPI 385 (vm0)
-		 * Clocks/resets managed via BPMP
+		 * Verbatim from Linux tegra234.dtsi + tegra234-p3737-0000+p3701-0000.dts
 		 */
 		ethernet@6800000 {
 			compatible = "nvidia,tegra234-mgbe";
 			reg = <0x0 0x06800000 0x0 0x10000>,
 			      <0x0 0x06810000 0x0 0x10000>,
-			      <0x0 0x068a0000 0x0 0x10000>,
-			      <0x0 0x068d0000 0x0 0x10000>;
-			reg-names = "hypervisor", "mac", "xpcs", "macsec-base";
-			interrupts = <0x0 384 0x4>,   /* SPI 384 - common */
-				     <0x0 385 0x4>;    /* SPI 385 - vm0 (DMA channel 0) */
-			interrupt-names = "common", "vm0";
-			/* nvidia,vm-irq-config phandle is set by fdt_plat_customize() */
-			clocks = <&bpmp 357>,  /* MGBE0_RX_INPUT_M */
-				 <&bpmp 361>,  /* MGBE0_RX_PCS_M */
-				 <&bpmp 369>,  /* MGBE0_RX_PCS_INPUT */
-				 <&bpmp 373>,  /* MGBE0_RX_PCS */
-				 <&bpmp 374>,  /* MGBE0_TX */
-				 <&bpmp 375>,  /* MGBE0_TX_PCS */
-				 <&bpmp 376>,  /* MGBE0_MAC_DIVIDER */
-				 <&bpmp 377>,  /* MGBE0_MAC */
-				 <&bpmp 379>,  /* MGBE0_EEE_PCS */
-				 <&bpmp 380>,  /* MGBE0_APP */
-				 <&bpmp 381>,  /* MGBE0_PTP_REF */
-				 <&bpmp 378>,  /* MGBE0_MACSEC */
-				 <&bpmp 248>;  /* MGBE0_RX_INPUT */
-			clock-names = "rx-input-m", "rx-pcs-m", "rx-pcs-input",
-				      "rx-pcs", "tx", "tx-pcs", "mac-divider",
-				      "mac", "eee-pcs", "mgbe", "ptp-ref",
-				      "mgbe_macsec", "rx-input";
-			resets = <&bpmp 46>,   /* TEGRA234_RESET_MGBE0_MAC */
-				 <&bpmp 45>;   /* TEGRA234_RESET_MGBE0_PCS */
+			      <0x0 0x068a0000 0x0 0x10000>;
+			reg-names = "hypervisor", "mac", "xpcs";
+			interrupts = <GIC_SPI 384 IRQ_TYPE_LEVEL_HIGH>;
+			interrupt-names = "common";
+			clocks = <&bpmp TEGRA234_CLK_MGBE0_APP>,
+				 <&bpmp TEGRA234_CLK_MGBE0_MAC>,
+				 <&bpmp TEGRA234_CLK_MGBE0_MAC_DIVIDER>,
+				 <&bpmp TEGRA234_CLK_MGBE0_PTP_REF>,
+				 <&bpmp TEGRA234_CLK_MGBE0_RX_INPUT_M>,
+				 <&bpmp TEGRA234_CLK_MGBE0_RX_INPUT>,
+				 <&bpmp TEGRA234_CLK_MGBE0_TX>,
+				 <&bpmp TEGRA234_CLK_MGBE0_EEE_PCS>,
+				 <&bpmp TEGRA234_CLK_MGBE0_RX_PCS_INPUT>,
+				 <&bpmp TEGRA234_CLK_MGBE0_RX_PCS_M>,
+				 <&bpmp TEGRA234_CLK_MGBE0_RX_PCS>,
+				 <&bpmp TEGRA234_CLK_MGBE0_TX_PCS>;
+			clock-names = "mgbe", "mac", "mac-divider", "ptp-ref", "rx-input-m",
+				      "rx-input", "tx", "eee-pcs", "rx-pcs-input", "rx-pcs-m",
+				      "rx-pcs", "tx-pcs";
+			resets = <&bpmp TEGRA234_RESET_MGBE0_MAC>,
+				 <&bpmp TEGRA234_RESET_MGBE0_PCS>;
 			reset-names = "mac", "pcs";
-			phys = <&p2u_gbe_0>;
-			phy-mode = "10gbase-r";
-			power-domains = <&bpmp 17>;  /* TEGRA234_POWER_DOMAIN_MGBEA */
-
-			/* NVIDIA driver required properties */
-			nvidia,num-dma-chans = <1>;
-			nvidia,dma-chans = <0>;
-			nvidia,num-mtl-queues = <1>;
-			nvidia,mtl-queues = <0>;
-			nvidia,tc-mapping = <0>;
-			nvidia,residual-queue = <0>;
-			nvidia,rxq_enable_ctrl = <2>;
-			nvidia,tx-queue-prio = <0>;
-			nvidia,rx-queue-prio = <0x1>;
-			nvidia,ptp_ref_clock_speed = <312500000>;
-			nvidia,instance_id = <0>;
-			nvidia,ptp-rx-queue = <0>;
-			nvidia,dma_rx_ring_sz = <1024>;
-			nvidia,dma_tx_ring_sz = <1024>;
-			nvidia,promisc_mode = <1>;
-			nvidia,macsec-enable = <0>;
-			nvidia,mac-addr-idx = <0>;
-			local-mac-address = [00 00 00 00 00 00];  /* Filled by bootloader or use random */
-			dma-coherent;
-			phy-handle = <&mgbe0_phy>;
+			power-domains = <&bpmp TEGRA234_POWER_DOMAIN_MGBEB>;
 			status = "okay";
 
-			/* Internal PHY via MDIO */
+			phy-handle = <&mgbe0_phy>;
+			phy-mode = "10gbase-r";
+
+			snps,axi-config = <&mgbe0_axi_setup>;
+
+			mgbe0_axi_setup: stmmac-axi-config {
+				snps,blen = <256 128 64 32>;
+				snps,rd_osr_lmt = <63>;
+				snps,wr_osr_lmt = <63>;
+			};
+
 			mdio {
 				#address-cells = <1>;
 				#size-cells = <0>;
@@ -376,23 +395,6 @@
 			reg = <0x71000 0x1000>;
 			label = "cpu-bpmp-rx";
 			pool;
-		};
-	};
-
-	/*
-	 * MGBE VM IRQ configuration
-	 * Maps DMA channels to VM IRQs. Required by nvethernet driver for MGBE.
-	 * Despite the "VM" name, this is used even on bare metal.
-	 * Single VM IRQ (vm0) handles our single DMA channel (channel 0).
-	 */
-	mgbe_vm_irq_config: mgbe-vm-irq-config {
-		nvidia,num-vm-irqs = <1>;
-
-		vm_irq0 {
-			nvidia,vm-irq-id = <0>;
-			nvidia,vm-num = <0>;
-			nvidia,num-vm-channels = <1>;
-			nvidia,vm-channels = <0>;  /* DMA channel 0 */
 		};
 	};
 
