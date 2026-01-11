@@ -13,6 +13,7 @@
 #include <dt-bindings/clock/tegra234-clock.h>
 #include <dt-bindings/gpio/tegra234-gpio.h>
 #include <dt-bindings/interrupt-controller/arm-gic.h>
+#include <dt-bindings/mailbox/tegra186-hsp.h>
 #include <dt-bindings/memory/tegra234-mc.h>
 #include <dt-bindings/power/tegra234-powergate.h>
 #include <dt-bindings/reset/tegra234-reset.h>
@@ -216,6 +217,17 @@
 			interrupt-controller;
 			#gpio-cells = <2>;
 			gpio-controller;
+			gpio-ranges = <&pinmux 0 0 164>;
+			status = "okay";
+		};
+
+		/*
+		 * Pinmux controller - required by GPIO for gpio-ranges
+		 */
+		pinmux: pinmux@2430000 {
+			compatible = "nvidia,tegra234-pinmux";
+			reg = <0x0 0x2430000 0x0 0x19100>;
+			status = "okay";
 		};
 
 		/*
@@ -361,8 +373,7 @@
 				 <&bpmp TEGRA234_RESET_MGBE0_PCS>,
 				 <&bpmp TEGRA234_RESET_MGBE0_MACSEC>; /* MACsec non-secure reset */
 			reset-names = "mac", "pcs", "macsec_ns_rst";
-			interconnects = <&mc TEGRA234_MEMORY_CLIENT_MGBEARD>,
-					<&mc TEGRA234_MEMORY_CLIENT_MGBEAWR>;
+			/* interconnects removed - tegra-mc not passed to VM */
 			power-domains = <&bpmp TEGRA234_POWER_DOMAIN_MGBEB>;
 			nvidia,vm-irq-config = <&mgbe_vm_irq_config>;
 			nvidia,num-dma-chans = <10>;
@@ -425,6 +436,7 @@
 				mgbe0_aqr113c_phy: phy@0 {
 					compatible = "ethernet-phy-ieee802.3-c45";
 					reg = <0x0>;
+					#phy-cells = <0>;
 					nvidia,phy-rst-pdelay-msec = <150>; /* msec */
 					nvidia,phy-rst-duration-usec = <221000>; /* usec */
 					interrupt-parent = <&gpio>;
@@ -434,17 +446,33 @@
 		};
 
 		/*
-		 * Memory controller - for MGBE interconnect reference
-		 * Verbatim from tegra234.dtsi
+		 * Memory Controller - needed for SMMU SID programming
+		 * Only reg property for device frame allocation, no driver binding
 		 */
 		mc: memory-controller@2c00000 {
-			compatible = "nvidia,tegra234-mc";
-			reg = <0x0 0x02c00000 0x0 0x100000>,
-			      <0x0 0x02b80000 0x0 0x040000>,
-			      <0x0 0x01700000 0x0 0x100000>;
-			interrupts = <GIC_SPI 223 IRQ_TYPE_LEVEL_HIGH>;
-			#interconnect-cells = <1>;
-			status = "okay";
+			reg = <0x0 0x02c00000 0x0 0x100000>;  /* 1MB for all MC instances */
+			status = "disabled";  /* Don't probe in guest */
+		};
+
+		/*
+		 * SMMU instances - for debug access via devmem2
+		 * Only reg properties, no compatible string to avoid driver probing
+		 */
+		smmu_niso1: iommu@8000000 {
+			reg = <0x0 0x07000000 0x0 0x1000000>,  /* shadow regs 16MB */
+			      <0x0 0x08000000 0x0 0x1000000>;  /* main regs 16MB */
+			status = "disabled";
+		};
+
+		smmu_iso: iommu@10000000 {
+			reg = <0x0 0x10000000 0x0 0x1000000>;  /* 16MB */
+			status = "disabled";
+		};
+
+		smmu_niso0: iommu@12000000 {
+			reg = <0x0 0x11000000 0x0 0x1000000>,  /* shadow regs 16MB */
+			      <0x0 0x12000000 0x0 0x1000000>;  /* main regs 16MB */
+			status = "disabled";
 		};
 	};
 
@@ -508,21 +536,31 @@
 		};
 	};
 
-	/* BPMP - Boot and Power Management Processor */
 	bpmp: bpmp {
 		compatible = "nvidia,tegra234-bpmp", "nvidia,tegra186-bpmp";
-		mboxes = <&hsp_top0 0x0 0x13>;  /* type=0 (doorbell), master=19 (BPMP) */
+		mboxes = <&hsp_top0 TEGRA_HSP_MBOX_TYPE_DB
+				    TEGRA_HSP_DB_MASTER_BPMP>;
 		shmem = <&cpu_bpmp_tx>, <&cpu_bpmp_rx>;
 		#clock-cells = <1>;
 		#reset-cells = <1>;
 		#power-domain-cells = <1>;
-		status = "okay";
+		/* interconnects = <&mc TEGRA234_MEMORY_CLIENT_BPMPR &emc>,
+				<&mc TEGRA234_MEMORY_CLIENT_BPMPW &emc>,
+				<&mc TEGRA234_MEMORY_CLIENT_BPMPDMAR &emc>,
+				<&mc TEGRA234_MEMORY_CLIENT_BPMPDMAW &emc>;
+		interconnect-names = "read", "write", "dma-mem", "dma-write";
+		iommus = <&smmu_niso1 TEGRA234_SID_BPMP>; */
 
 		bpmp_i2c: i2c {
 			compatible = "nvidia,tegra186-bpmp-i2c";
 			nvidia,bpmp-bus-id = <5>;
 			#address-cells = <1>;
 			#size-cells = <0>;
+		};
+
+		bpmp_thermal: thermal {
+			compatible = "nvidia,tegra186-bpmp-thermal";
+			#thermal-sensor-cells = <1>;
 		};
 	};
 };
