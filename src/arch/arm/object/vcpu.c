@@ -232,6 +232,7 @@ void vcpu_init(vcpu_t *vcpu)
 
 void vcpu_switch(vcpu_t *new)
 {
+    printf("%%");
     if (likely(ARCH_NODE_STATE(armHSCurVCPU) != new)) {
         if (unlikely(new != NULL)) {
             if (unlikely(ARCH_NODE_STATE(armHSCurVCPU) != NULL)) {
@@ -240,6 +241,7 @@ void vcpu_switch(vcpu_t *new)
             vcpu_restore(new);
             ARCH_NODE_STATE(armHSCurVCPU) = new;
             ARCH_NODE_STATE(armHSVCPUActive) = true;
+	    printf("&");
         } else if (unlikely(ARCH_NODE_STATE(armHSVCPUActive))) {
             /* leave the current VCPU state loaded, but disable vgic and mmu */
 #ifdef ARM_HYP_CP14_SAVE_AND_RESTORE_VCPU_THREADS
@@ -247,11 +249,13 @@ void vcpu_switch(vcpu_t *new)
 #endif
             vcpu_disable(ARCH_NODE_STATE(armHSCurVCPU));
             ARCH_NODE_STATE(armHSVCPUActive) = false;
+	    printf("£");
         }
     } else if (likely(!ARCH_NODE_STATE(armHSVCPUActive) && new != NULL)) {
         isb();
         vcpu_enable(new);
         ARCH_NODE_STATE(armHSVCPUActive) = true;
+	printf("¤");
     }
 }
 

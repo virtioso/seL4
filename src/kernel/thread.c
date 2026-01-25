@@ -374,6 +374,7 @@ static void scheduleChooseNewThread(void)
 
 void schedule(void)
 {
+	printf("!");
 #ifdef CONFIG_KERNEL_MCS
     awaken();
     checkDomainTime();
