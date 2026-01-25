@@ -145,29 +145,14 @@
 		reg = <0x0 0x80400000 0x0 0xFFC00000>;
 	};
 
-	/*
-	 * TCU (Tegra Combined UART) - for seL4 kernel console.
-	 * Has reg property pointing to HSP AON SM TX mailbox for UART_PPTR.
-	 */
-	tcu: serial {
-		compatible = "nvidia,tegra234-tcu";
-		reg = <0x0 0x0c168000 0x0 0x1000>;
-		mboxes = <&hsp_aon 0 0x13000001>;
-		mbox-names = "tx";
-		status = "okay";
-	};
-
-	/*
-	 * TCU for guest VM passthrough - no reg property.
-	 * Linux TCU driver works purely via mboxes, no dedicated MMIO needed.
-	 * This avoids overlap with HSP AON's device frame region.
-	 */
-	tcu_guest: serial-guest {
-		compatible = "nvidia,tegra234-tcu", "nvidia,tegra194-tcu";
-		mboxes = <&hsp_aon 0 0x13000001>;
-		mbox-names = "tx";
-		status = "okay";
-	};
+        tcu: serial {
+                compatible = "nvidia,tegra234-tcu", "nvidia,tegra194-tcu";
+                reg = <0x0 0x0c168000 0x0 0x1000>;
+                mboxes = <&hsp_top0 TEGRA_HSP_MBOX_TYPE_SM TEGRA_HSP_SM_RX(0)>,
+                         <&hsp_aon TEGRA_HSP_MBOX_TYPE_SM TEGRA_HSP_SM_TX(1)>;
+                mbox-names = "rx", "tx";
+                status = "okay";
+        };
 
 	/*
 	 * bus@0 - simple-bus for memory-mapped peripherals
