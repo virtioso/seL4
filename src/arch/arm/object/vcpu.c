@@ -393,6 +393,12 @@ exception_t invokeVCPUInjectIRQ(vcpu_t *vcpu, unsigned long index, virq_t virq)
 {
     if (likely(ARCH_NODE_STATE(armHSCurVCPU) == vcpu)) {
         set_gic_vcpu_ctrl_lr(index, virq);
+        /* Keep shadow in sync with hardware */
+        vcpu->vgic.lr[index] = virq;
+        /* Ensure the LR write is visible before returning to the VM.
+         * Without this ISB, the GIC may not see the new LR value
+         * by the time the kernel does eret to resume the guest. */
+        isb();
 #ifdef ENABLE_SMP_SUPPORT
     } else if (vcpu->vcpuTCB != NULL && vcpu->vcpuTCB->tcbAffinity != getCurrentCPUIndex()) {
         doRemoteOp3Arg(IpiRemoteCall_VCPUInjectInterrupt,
@@ -598,6 +604,10 @@ void handleVCPUInjectInterruptIPI(vcpu_t *vcpu, unsigned long index, virq_t virq
 {
     if (likely(ARCH_NODE_STATE(armHSCurVCPU) == vcpu)) {
         set_gic_vcpu_ctrl_lr(index, virq);
+        /* Keep shadow in sync with hardware */
+        vcpu->vgic.lr[index] = virq;
+        /* Ensure the LR write is visible before returning to the VM */
+        isb();
     } else {
         vcpu->vgic.lr[index] = virq;
     }
