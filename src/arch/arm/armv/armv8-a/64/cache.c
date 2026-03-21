@@ -4,41 +4,34 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <config.h>
-#include <arch/machine.h>
 #include <arch/machine/hardware.h>
-#include <kernel/boot.h>
 
-static void get_boot_flush_region(word_t *start, word_t *end)
-{
-    *start = (word_t)ptrFromPAddr(physBase());
-
-    if (rootserver.paging.end != 0) {
-        /* After init_freemem: flush up to rootserver allocations + margin */
-        *end = rootserver.paging.end + (2 * 1024 * 1024);
-    } else {
-        /* Early boot: rootserver not yet initialized, flush kernel image */
-        *end = (word_t)ki_end + (2 * 1024 * 1024);
-    }
-}
+/*
+ * On ARMv8-A the page table walker is cache-coherent, so kernel page
+ * table writes are visible to the hardware without explicit cache
+ * maintenance. The elfloader flushes all loaded images to PoC before
+ * entering the kernel, so no boot-time bulk cache clean is needed here.
+ *
+ * These functions are called from activate_kernel_vspace() and
+ * benchmark code. Making them no-ops avoids the need to walk a
+ * VA range for cache maintenance, which is problematic with disjoint
+ * memory regions (UEFI memory map with firmware carveout gaps).
+ */
 
 void clean_D_PoU(void)
 {
-    word_t start, end;
-    get_boot_flush_region(&start, &end);
-    cleanInvalidateCacheRange_RAM(start, end - 1, addrFromKPPtr((void *)start));
+    dsb();
+    isb();
 }
 
 void cleanInvalidate_D_PoC(void)
 {
-    word_t start, end;
-    get_boot_flush_region(&start, &end);
-    cleanInvalidateCacheRange_RAM(start, end - 1, addrFromKPPtr((void *)start));
+    dsb();
+    isb();
 }
 
 void cleanInvalidate_L1D(void)
 {
-    word_t start, end;
-    get_boot_flush_region(&start, &end);
-    cleanInvalidateCacheRange_RAM(start, end - 1, addrFromKPPtr((void *)start));
+    dsb();
+    isb();
 }
