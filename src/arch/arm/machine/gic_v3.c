@@ -391,6 +391,10 @@ BOOT_CODE void initIRQController(void)
     dist_init();
 }
 
+#ifdef ENABLE_SMP_SUPPORT
+static void ipi_register_cpu(word_t cpu, word_t mpidr);
+#endif
+
 BOOT_CODE void cpu_initLocalIRQController(void)
 {
     word_t mpidr = 0;
@@ -398,6 +402,9 @@ BOOT_CODE void cpu_initLocalIRQController(void)
 
     mpidr_map[CURRENT_CPU_INDEX()] = mpidr;
     active_irq[CURRENT_CPU_INDEX()] = IRQ_NONE;
+#ifdef ENABLE_SMP_SUPPORT
+    ipi_register_cpu(CURRENT_CPU_INDEX(), mpidr);
+#endif
 
     gicr_init();
     cpu_iface_init();
@@ -420,30 +427,52 @@ void plat_sendSGI(word_t irq, word_t target)
 #ifdef ENABLE_SMP_SUPPORT
 #define MPIDR_MT(x)   (x & BIT(24))
 
-void ipi_send_target(irq_t irq, word_t cpuTargetList)
-{
-    uint64_t sgi1r_base = ((word_t) IRQT_TO_IRQ(irq)) << ICC_SGI1R_INTID_SHIFT;
-    word_t sgi1r[CONFIG_MAX_NUM_NODES];
-    word_t last_aff1 = 0;
+/*
+ * Precomputed IPI routing tables, populated during cpu_initLocalIRQController().
+ * ipi_aff_group[cpu]  = index into ipi_group_sgi1r[] for this CPU's affinity group
+ * ipi_aff0_bit[cpu]   = BIT(AFF0) target bit for this CPU within its group
+ * ipi_group_sgi1r[g]  = SGI1R affinity fields for group g (AFF3|AFF2|AFF1)
+ * ipi_num_groups      = number of unique affinity groups
+ */
+static uint8_t ipi_aff_group[CONFIG_MAX_NUM_NODES];
+static uint16_t ipi_aff0_bit[CONFIG_MAX_NUM_NODES];
+static uint64_t ipi_group_sgi1r[CONFIG_MAX_NUM_NODES];
+static word_t ipi_num_groups;
 
-    for (word_t i = 0; i < CONFIG_MAX_NUM_NODES; i++) {
-        sgi1r[i] = 0;
-        if (cpuTargetList & BIT(i)) {
-            word_t mpidr = mpidr_map[i];
-            word_t aff1 = MPIDR_AFF1(mpidr);
-            word_t aff0 = MPIDR_AFF0(mpidr);
-            // AFF1 is assumed to be contiguous and less than CONFIG_MAX_NUM_NODES.
-            // The targets are grouped by AFF1.
-            assert(aff1 >= 0 && aff1 < CONFIG_MAX_NUM_NODES);
-            sgi1r[aff1] |= sgi1r_base | (aff1 << ICC_SGI1R_AFF1_SHIFT) | (1 << aff0);
-            if (aff1 > last_aff1) {
-                last_aff1 = aff1;
-            }
+static void ipi_register_cpu(word_t cpu, word_t mpidr)
+{
+    uint64_t aff = ((uint64_t)MPIDR_AFF3(mpidr) << ICC_SGI1R_AFF3_SHIFT)
+                 | ((uint64_t)MPIDR_AFF2(mpidr) << ICC_SGI1R_AFF2_SHIFT)
+                 | ((uint64_t)MPIDR_AFF1(mpidr) << ICC_SGI1R_AFF1_SHIFT);
+
+    ipi_aff0_bit[cpu] = BIT(MPIDR_AFF0(mpidr));
+
+    for (word_t g = 0; g < ipi_num_groups; g++) {
+        if (ipi_group_sgi1r[g] == aff) {
+            ipi_aff_group[cpu] = g;
+            return;
         }
     }
-    for (word_t i = 0; i <= last_aff1; i++) {
-        if (sgi1r[i] != 0) {
-            SYSTEM_WRITE_64(ICC_SGI1R_EL1, sgi1r[i]);
+    ipi_group_sgi1r[ipi_num_groups] = aff;
+    ipi_aff_group[cpu] = ipi_num_groups;
+    ipi_num_groups++;
+}
+
+void ipi_send_target(irq_t irq, word_t cpuTargetList)
+{
+    uint64_t targets[CONFIG_MAX_NUM_NODES] = {0};
+
+    word_t remaining = cpuTargetList;
+    while (remaining) {
+        word_t i = __builtin_ctzl(remaining);
+        targets[ipi_aff_group[i]] |= ipi_aff0_bit[i];
+        remaining &= remaining - 1;
+    }
+
+    uint64_t intid = (uint64_t)IRQT_TO_IRQ(irq) << ICC_SGI1R_INTID_SHIFT;
+    for (word_t g = 0; g < ipi_num_groups; g++) {
+        if (targets[g]) {
+            SYSTEM_WRITE_64(ICC_SGI1R_EL1, intid | ipi_group_sgi1r[g] | targets[g]);
         }
     }
     isb();
