@@ -39,6 +39,20 @@ BOOT_BSS static volatile _Atomic int node_boot_lock;
 
 BOOT_BSS static region_t reserved[NUM_RESERVED_REGIONS];
 
+/* Reserve gaps between memory regions to prevent device untyped
+ * creation over firmware carveout ranges. */
+BOOT_CODE static void reserve_region_gaps(word_t n, const p_region_t *regs)
+{
+    for (word_t g = 0; g + 1 < n; g++) {
+        if (regs[g].end < regs[g + 1].start) {
+            reserve_region((p_region_t) {
+                .start = regs[g].end,
+                .end   = regs[g + 1].start
+            });
+        }
+    }
+}
+
 BOOT_CODE static bool_t arch_init_freemem(p_region_t ui_p_reg,
                                           p_region_t dtb_p_reg,
                                           v_region_t it_v_reg,
@@ -109,7 +123,8 @@ BOOT_CODE static bool_t arch_init_freemem(p_region_t ui_p_reg,
         reserve_region(ui_p_reg);
     }
 
-    /* avail_p_regs comes from the auto-generated code */
+    reserve_region_gaps(ARRAY_SIZE(avail_p_regs), avail_p_regs);
+
     return init_freemem(ARRAY_SIZE(avail_p_regs), avail_p_regs,
                         index, reserved,
                         it_v_reg, extra_bi_size_bits);
