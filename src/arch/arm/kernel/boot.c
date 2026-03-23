@@ -123,9 +123,16 @@ BOOT_CODE static bool_t arch_init_freemem(p_region_t ui_p_reg,
         reserve_region(ui_p_reg);
     }
 
-    reserve_region_gaps(ARRAY_SIZE(avail_p_regs), avail_p_regs);
+    /* Count non-empty avail_p_regs entries. */
+    word_t num_avail = 0;
+    while (num_avail < ARRAY_SIZE(avail_p_regs) &&
+           avail_p_regs[num_avail].start != avail_p_regs[num_avail].end) {
+        num_avail++;
+    }
 
-    return init_freemem(ARRAY_SIZE(avail_p_regs), avail_p_regs,
+    reserve_region_gaps(num_avail, avail_p_regs);
+
+    return init_freemem(num_avail, avail_p_regs,
                         index, reserved,
                         it_v_reg, extra_bi_size_bits);
 }

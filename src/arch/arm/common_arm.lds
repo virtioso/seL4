@@ -26,6 +26,11 @@ SECTIONS
         . = ALIGN(64K);
     }
 
+    .boot.memmap . : AT(ADDR(.boot.memmap) - KERNEL_OFFSET)
+    {
+        *(.boot.memmap)
+    }
+
     ki_boot_end = .;
 
     .text . : AT(ADDR(.text) - KERNEL_OFFSET)

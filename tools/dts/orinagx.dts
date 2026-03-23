@@ -150,7 +150,15 @@
 
 	memory@80000000 {
 		device_type = "memory";
-		/* 768MB RAM starting at 0x80000000 */
-		reg = <0x0 0x80000000 0x0 0x30000000>;
+		/*
+		 * Minimal placeholder for PHYS_BASE_RAW (kernel link address).
+		 * The real DRAM layout should be provided by the loader via
+		 * the .boot.memmap section at runtime (e.g. from UEFI).
+		 *
+		 * Orin AGX 32GB UEFI memory map (stock L4T, fw r36.4.4):
+		 *   0x080000000 - 0x0FFFDFFFF : System RAM  (~2 GiB)
+		 *   0x100000000 - 0x819DE1FFF : System RAM  (~28.4 GiB)
+		 */
+		reg = <0x0 0x80000000 0x0 0x1000>;
 	};
 };

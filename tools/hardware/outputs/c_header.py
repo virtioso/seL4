@@ -115,8 +115,14 @@ static const kernel_frame_t BOOT_RODATA *const kernel_device_frames = NULL;
 #define NUM_KERNEL_DEVICE_FRAMES 0
 {% endif %}
 
-/* PHYSICAL MEMORY */
-static const p_region_t BOOT_RODATA avail_p_regs[] = {
+/* PHYSICAL MEMORY
+ *
+ * A loader may overwrite this array (in the .boot.memmap ELF section)
+ * before jumping to the kernel, e.g. with UEFI memory map regions.
+ * Unused entries are {0, 0} and naturally skipped.
+ */
+#define AVAIL_P_REGS_MAX 64
+p_region_t BOOT_MEMMAP avail_p_regs[AVAIL_P_REGS_MAX] = {
     {% for reg in physical_memory %}
     /* {{ reg.owner.path }} */
     {

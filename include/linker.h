@@ -21,6 +21,9 @@
 /* node-local bss data that is only used during kernel bootstrapping */
 #define BOOT_BSS SECTION(".boot.bss")
 
+/* writable boot data that a loader may overwrite before kernel entry */
+#define BOOT_MEMMAP SECTION(".boot.memmap")
+
 /* data will be aligned to n bytes in a special BSS section */
 #define ALIGN_BSS(n) ALIGN(n) SECTION(".bss.aligned")
 
