@@ -233,25 +233,58 @@ BOOT_CODE void map_kernel_frame(paddr_t paddr, pptr_t vaddr, vm_rights_t vm_righ
                                                                                             attr_index);
 }
 
+/* Map a physical address range into the kernel window using mixed page
+ * sizes: 1 GiB PUD-level block descriptors for GiB-aligned portions,
+ * 2 MiB PD-level blocks for non-aligned edges. */
 static BOOT_CODE void map_kernel_window_range(paddr_t start, paddr_t end)
 {
-    pptr_t vaddr = (pptr_t)ptrFromPAddr(start);
-    for (paddr_t paddr = start; paddr < end; paddr += BIT(seL4_LargePageBits)) {
-        armKSGlobalKernelPDs[GET_KPT_INDEX(vaddr, KLVL_FRM_ARM_PT_LVL(1))][GET_KPT_INDEX(vaddr,
-                                                                                         KLVL_FRM_ARM_PT_LVL(2))] = pte_pte_page_new(
+    paddr_t paddr = start;
+    while (paddr < end) {
+        pptr_t vaddr = (pptr_t)ptrFromPAddr(paddr);
+        word_t pud_idx = GET_KPT_INDEX(vaddr, KLVL_FRM_ARM_PT_LVL(1));
+        paddr_t next_gig = ROUND_UP(paddr + 1, seL4_HugePageBits);
+        paddr_t remaining = end - paddr;
+
+        if (IS_ALIGNED(paddr, seL4_HugePageBits) && remaining >= BIT(seL4_HugePageBits)) {
+            /* 1 GiB block descriptor directly in PUD */
+            armKSGlobalKernelPUD[pud_idx] = pte_pte_page_new(
 #ifdef CONFIG_ARM_HYPERVISOR_SUPPORT
-                                                                                                                        0, // XN
+                                                0, // XN
 #else
-                                                                                                                        1, // UXN
+                                                1, // UXN
 #endif
-                                                                                                                        paddr,
-                                                                                                                        0,                        /* global */
-                                                                                                                        1,                        /* access flag */
-                                                                                                                        SMP_TERNARY(SMP_SHARE, 0),        /* Inner-shareable if SMP enabled, otherwise unshared */
-                                                                                                                        0,                        /* VMKernelOnly */
-                                                                                                                        NORMAL
-                                                                                                                    );
-        vaddr += BIT(seL4_LargePageBits);
+                                                paddr,
+                                                0,                        /* global */
+                                                1,                        /* access flag */
+                                                SMP_TERNARY(SMP_SHARE, 0),        /* Inner-shareable if SMP enabled, otherwise unshared */
+                                                0,                        /* VMKernelOnly */
+                                                NORMAL
+                                            );
+            paddr += BIT(seL4_HugePageBits);
+        } else {
+            /* 2 MiB block descriptors in PD table */
+            armKSGlobalKernelPUD[pud_idx] = pte_pte_table_new(
+                                                addrFromKPPtr(&armKSGlobalKernelPDs[pud_idx][0])
+                                            );
+            paddr_t chunk_end = (next_gig < end) ? next_gig : end;
+            while (paddr < chunk_end) {
+                vaddr = (pptr_t)ptrFromPAddr(paddr);
+                armKSGlobalKernelPDs[pud_idx][GET_KPT_INDEX(vaddr, KLVL_FRM_ARM_PT_LVL(2))] = pte_pte_page_new(
+#ifdef CONFIG_ARM_HYPERVISOR_SUPPORT
+                                                                                                    0, // XN
+#else
+                                                                                                    1, // UXN
+#endif
+                                                                                                    paddr,
+                                                                                                    0,                        /* global */
+                                                                                                    1,                        /* access flag */
+                                                                                                    SMP_TERNARY(SMP_SHARE, 0),        /* Inner-shareable if SMP enabled, otherwise unshared */
+                                                                                                    0,                        /* VMKernelOnly */
+                                                                                                    NORMAL
+                                                                                                );
+                paddr += BIT(seL4_LargePageBits);
+            }
+        }
     }
 }
 
@@ -275,14 +308,6 @@ BOOT_CODE void map_kernel_window(void)
     /* place the PUD into the PGD */
     armKSGlobalKernelPGD[GET_KPT_INDEX(PPTR_BASE, KLVL_FRM_ARM_PT_LVL(0))] = pte_pte_table_new(
                                                                                  addrFromKPPtr(armKSGlobalKernelPUD));
-
-    /* place all PDs except the last one in PUD */
-    for (idx = GET_KPT_INDEX(PPTR_BASE, KLVL_FRM_ARM_PT_LVL(1)); idx < GET_KPT_INDEX(PPTR_TOP, KLVL_FRM_ARM_PT_LVL(1));
-         idx++) {
-        armKSGlobalKernelPUD[idx] = pte_pte_table_new(
-                                        addrFromKPPtr(&armKSGlobalKernelPDs[idx][0])
-                                    );
-    }
 
     /* map the kernel window using large pages */
     for (idx = 0; idx < ARRAY_SIZE(avail_p_regs); idx++) {
