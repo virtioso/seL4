@@ -458,7 +458,7 @@ static void ipi_register_cpu(word_t cpu, word_t mpidr)
     ipi_num_groups++;
 }
 
-void ipi_send_target(irq_t irq, word_t cpuTargetList)
+static void ipi_send_multi(irq_t irq, word_t cpuTargetList)
 {
     uint64_t targets[CONFIG_MAX_NUM_NODES] = {0};
 
@@ -476,6 +476,21 @@ void ipi_send_target(irq_t irq, word_t cpuTargetList)
         }
     }
     isb();
+}
+
+void ipi_send_target(irq_t irq, word_t cpuTargetList)
+{
+    if (likely(cpuTargetList && !(cpuTargetList & (cpuTargetList - 1)))) {
+        /* Single target — fast path */
+        word_t i = __builtin_ctzl(cpuTargetList);
+        SYSTEM_WRITE_64(ICC_SGI1R_EL1,
+            ((uint64_t)IRQT_TO_IRQ(irq) << ICC_SGI1R_INTID_SHIFT)
+            | ipi_group_sgi1r[ipi_aff_group[i]]
+            | ipi_aff0_bit[i]);
+        isb();
+    } else {
+        ipi_send_multi(irq, cpuTargetList);
+    }
 }
 
 void setIRQTarget(irq_t irq, seL4_Word target)
